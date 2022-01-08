@@ -65,9 +65,7 @@ impl std::io::Read for ResponseReader {
                 self.read_len += 1;
                 read
             }
-            Err(_) => {
-                read
-            }
+            Err(_) => read,
         }
     }
 }
