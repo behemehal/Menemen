@@ -1,4 +1,3 @@
-use anyhow::private::kind::TraitKind;
 use openssl::ssl::SslStream;
 use std::{
     io::{Read, Write},
@@ -16,10 +15,10 @@ impl Transport {
         match self {
             Transport::Ssl(e) => {
                 e.shutdown().unwrap();
-            },
+            }
             Transport::Tcp(e) => {
                 e.shutdown(std::net::Shutdown::Both).unwrap();
-            },
+            }
         }
     }
 }

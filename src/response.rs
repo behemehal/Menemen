@@ -1,5 +1,3 @@
-use core::panic;
-
 use crate::transport::Transport;
 use anyhow::Context;
 
