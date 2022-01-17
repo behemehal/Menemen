@@ -33,7 +33,7 @@ impl Url {
     /// ```rust
     /// use menemen::url::Url;
     /// let url = Url::build_from_string("https://behemehal.net/test?qtest=123".to_string()).unwrap();
-    /// 
+    ///
     /// assert_eq!(url.is_https, true);
     /// assert_eq!(url.host, "behemehal.net".to_string());
     /// assert_eq!(url.query_params.len(), 1);
@@ -133,7 +133,7 @@ impl Url {
     /// Join url parameters according to the url scheme
     /// ## Returns
     /// String of joined parameters
-    /// 
+    ///
     /// ## Example
     /// ```
     /// use menemen::url::Url;

@@ -1,6 +1,6 @@
 [package]
 name = "menemen"
-version = "0.2.0-alpha"
+version = "0.2.1-alpha"
 authors = ["Behemehal", "Ahmetcan Aksu"]
 edition = "2021"
 description = "A streaming http request library "
@@ -19,3 +19,11 @@ bufstream = { version = "0.1.4" }
 [[example]]
 name = "download_file"
 path = "examples/download_file.rs"
+
+[[example]]
+name = "echo"
+path = "examples/hello.rs"
+
+[[example]]
+name = "parse_url"
+path = "examples/parse_url.rs"

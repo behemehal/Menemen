@@ -9,7 +9,7 @@ use std::{
 };
 
 /// HTTP Header
-/// ##### [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers] 
+/// ##### [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers]
 #[derive(Debug, Clone)]
 pub struct Header {
     /// The name of the header
@@ -27,9 +27,9 @@ impl Header {
     /// ## Example
     /// ```
     /// use menemen::request::Header;
-    /// let header = Header::parse_header("Content-Type: text/html; charset=utf-8");
-    /// assert_eq!(header.unwrap().name, "Content-Type");
-    /// assert_eq!(header.unwrap().value, "text/html; charset=utf-8");
+    /// let header = Header::parse("Content-Type: text/html; charset=utf-8").unwrap();
+    /// assert_eq!(header.name.clone(), "Content-Type");
+    /// assert_eq!(header.value, "text/html; charset=utf-8");
     /// ```
     pub fn parse(line: &str) -> anyhow::Result<Header> {
         if !line.contains(":") {
@@ -167,11 +167,11 @@ impl Request {
     /// Builds the request body
     /// ### Example
     /// ```
-    /// use menemen::request::Request;
-    /// 
-    /// let request = Request::new("https://behemehal.net/test", RequestTypes::GET).unwrap();
-    /// let body = request.build_body();
-    /// assert_eq!(body, "");
+    /// use menemen::request::{Request, RequestTypes};
+    ///
+    /// let mut request = Request::new("https://behemehal.net/test", RequestTypes::GET).unwrap();
+    /// let body = request.build_request_body();
+    /// assert_eq!(body, "GET https://behemehal.net:443/test HTTP/1.1\r\nHost:behemehal.net:443\r\nConnection:close\r\nCache-Control:max-age=0\r\nUser-Agent:Menemen/0.2.0-alpha\r\nContent-Type:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n\r\n".to_string());
     /// ```
     pub fn build_request_body(&mut self) -> String {
         self.set_header("Content-Type", &self.content_type.clone().get_type());
@@ -204,8 +204,8 @@ impl Request {
     /// [`Request`] if the timeout set before the request sent else [`error::Error`]
     /// ## Example
     /// ```
-    /// use menemen::request::Request;
-    /// 
+    /// use menemen::request::{Request, RequestTypes};
+    ///
     /// let mut request = Request::new("https://behemehal.net/test", RequestTypes::GET).unwrap();
     /// request.set_timeout(5000);
     /// ```
@@ -242,8 +242,8 @@ impl Request {
     /// [`Request`] if the header was set before the request sent else [`error::Error`]
     /// ## Example
     /// ```
-    /// use menemen::request::Request;
-    /// 
+    /// use menemen::request::{Request, RequestTypes};
+    ///
     /// let mut request = Request::new("https://behemehal.net/test", RequestTypes::GET).unwrap();
     /// request.set_header("Host", "behemehal.net");
     /// ```

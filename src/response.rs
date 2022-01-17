@@ -1,6 +1,6 @@
+use crate::request;
 use crate::transport::Transport;
 use anyhow::Context;
-use crate::request;
 
 /// ResponseInfo struct
 #[derive(Clone, Debug, Default)]
