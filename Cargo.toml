@@ -1,6 +1,6 @@
 [package]
 name = "menemen"
-version = "0.2.1-alpha"
+version = "0.2.2-alpha" # Update ./src/lib path and ./tests/request::body_build_test version
 authors = ["Behemehal", "Ahmetcan Aksu"]
 edition = "2021"
 description = "A streaming http request library "
@@ -22,7 +22,7 @@ path = "examples/download_file.rs"
 
 [[example]]
 name = "echo"
-path = "examples/hello.rs"
+path = "examples/echo.rs"
 
 [[example]]
 name = "parse_url"
