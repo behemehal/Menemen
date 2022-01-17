@@ -1,6 +1,6 @@
 [package]
 name = "menemen"
-version = "0.1.0-alpha"
+version = "0.2.0-alpha"
 authors = ["Behemehal", "Ahmetcan Aksu"]
 edition = "2021"
 description = "A streaming http request library "
@@ -11,12 +11,10 @@ readme = "README.md"
 documentation = "https://docs.rs/menemen"
 repository = "https://github.com/behemehal/Menemen"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-dns-lookup = "1.0.8"
 anyhow = "1.0.52"
 openssl = "0.10.36"
+bufstream = { version = "0.1.4" }
 
 [[example]]
 name = "download_file"

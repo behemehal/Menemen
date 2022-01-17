@@ -1,15 +1,24 @@
 use crate::transport::Transport;
 use anyhow::Context;
+use crate::request;
 
+/// ResponseInfo struct
 #[derive(Clone, Debug, Default)]
 pub struct ResponseInfo {
+    /// The HTTP version of the server
     pub http_version: String,
+    /// The status code of the response
     pub status_code: u16,
+    /// The status message of the response
     pub status_message: String,
 }
 
 impl ResponseInfo {
-    //Parse coming HTTP/1.1 200 OK answer to ResponseInfo struct
+    /// Parse coming HTTP/1.1 200 OK answer to ResponseInfo struct
+    /// ## Parameters
+    /// * `response` - The HTTP/1.1 200 OK answer
+    /// ## Returns
+    /// [`ResponseInfo`] if the answer was successfully parsed else [`anyhow::Error`]
     pub fn parse_response_info(response: &str) -> Result<ResponseInfo, anyhow::Error> {
         let mut response_info = ResponseInfo {
             http_version: String::new(),
@@ -32,47 +41,13 @@ impl ResponseInfo {
     }
 }
 
-#[derive(Debug)]
-pub struct ResponseReader {
-    pub stream: Transport,
-    pub read_len: u64,
-    pub content_len: i64,
-}
-
-impl ResponseReader {
-    pub fn new(stream: Transport, content_len: i64) -> ResponseReader {
-        ResponseReader {
-            stream,
-            read_len: 0,
-            content_len,
-        }
-    }
-
-    pub fn complete(&self) -> bool {
-        if self.content_len < 0 {
-            false
-        } else {
-            self.read_len == (self.content_len as u64)
-        }
-    }
-}
-
-impl std::io::Read for ResponseReader {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let read = self.stream.read(buf);
-        match read {
-            Ok(_) => {
-                self.read_len += 1;
-                read
-            }
-            Err(_) => read,
-        }
-    }
-}
-
-#[derive(Debug)]
+/// [`Response`] struct contains incoming headers ([`Vec<request::Header>`]), [`ResponseInfo`], and stream ([`Transport`]) which implements [`std::io::Read`], [`std::io::Write`] and [`std::io::BufRead`]
+#[allow(missing_debug_implementations)]
 pub struct Response {
+    /// Response info [`ResponseInfo`]
     pub response_info: ResponseInfo,
-    pub headers: Vec<crate::request::Header>,
-    pub stream: ResponseReader,
+    /// Response headers [`Vec<request::Header>`]
+    pub headers: Vec<request::Header>,
+    /// Incoming body stream
+    pub stream: Transport,
 }

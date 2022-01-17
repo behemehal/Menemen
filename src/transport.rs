@@ -1,26 +1,17 @@
+use bufstream::BufStream;
 use openssl::ssl::SslStream;
 use std::{
     io::{Read, Write},
     net::TcpStream,
 };
 
-#[derive(Debug)]
+/// This enum is a bridge for the different types of streams that can be used to communicate with the server.
+#[allow(missing_debug_implementations)]
 pub enum Transport {
-    Ssl(SslStream<TcpStream>),
-    Tcp(TcpStream),
-}
-
-impl Transport {
-    pub fn close(&mut self) {
-        match self {
-            Transport::Ssl(e) => {
-                e.shutdown().unwrap();
-            }
-            Transport::Tcp(e) => {
-                e.shutdown(std::net::Shutdown::Both).unwrap();
-            }
-        }
-    }
+    /// Ssl stream
+    Ssl(BufStream<SslStream<TcpStream>>),
+    /// Tcp stream
+    Tcp(BufStream<TcpStream>),
 }
 
 impl Write for Transport {
@@ -44,6 +35,22 @@ impl Read for Transport {
         match self {
             Transport::Ssl(socket) => socket.read(buf),
             Transport::Tcp(socket) => socket.read(buf),
+        }
+    }
+}
+
+impl std::io::BufRead for Transport {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        match self {
+            Transport::Ssl(socket) => socket.fill_buf(),
+            Transport::Tcp(socket) => socket.fill_buf(),
+        }
+    }
+
+    fn consume(&mut self, amt: usize) {
+        match self {
+            Transport::Ssl(socket) => socket.consume(amt),
+            Transport::Tcp(socket) => socket.consume(amt),
         }
     }
 }
