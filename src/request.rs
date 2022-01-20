@@ -1,11 +1,11 @@
 use crate::{error, response::Response, response::ResponseInfo, transport::Transport, url::Url};
 use anyhow::Context;
 use bufstream::BufStream;
+#[cfg(feature = "https")]
 use openssl::ssl::{SslConnector, SslMethod};
 use std::{
     io::{Read, Write},
     net::TcpStream,
-    time::Duration,
 };
 
 /// HTTP Header
@@ -271,30 +271,38 @@ impl Request {
             return Err(error::RequestErrors::AlreadySent);
         } else {
             let socket_addr = (self.url.host.clone(), self.url.port);
-            let connector = if self.url.is_https {
-                Some(match SslConnector::builder(SslMethod::tls()) {
-                    Ok(e) => e.build(),
-                    Err(_) => {
-                        return Err(error::RequestErrors::ConnectionError(
-                            "Failed to establish ssl connection".to_string(),
-                        ));
-                    }
-                })
-            } else {
-                None
-            };
+            #[cfg(feature = "http")]
+            {
+                let connector: Option<SslConnector> = if self.url.is_https {
+                    Some(match SslConnector::builder(SslMethod::tls()) {
+                        Ok(e) => e.build(),
+                        Err(_) => {
+                            return Err(error::RequestErrors::ConnectionError(
+                                "Failed to establish ssl connection".to_string(),
+                            ));
+                        }
+                    })
+                } else {
+                    None
+                };
+            }
+
             match TcpStream::connect(socket_addr) {
                 Ok(mut _tcp_stream) => {
                     let mut tcp_stream = if self.url.is_https {
-                        _tcp_stream
-                            .set_read_timeout(Some(Duration::from_millis(5000)))
-                            .unwrap();
-                        Transport::Ssl(BufStream::new(
-                            connector
-                                .unwrap()
-                                .connect(&self.url.host, _tcp_stream)
-                                .unwrap(),
-                        ))
+                        #[cfg(feature = "http")]
+                        {
+                            _tcp_stream
+                                .set_read_timeout(Some(Duration::from_millis(5000)))
+                                .unwrap();
+                            Transport::Ssl(BufStream::new(
+                                connector
+                                    .unwrap()
+                                    .connect(&self.url.host, _tcp_stream)
+                                    .unwrap(),
+                            ))
+                        }
+                        panic!("HTTPS feature disabled, and not working as expected")
                     } else {
                         //_tcp_stream.set_read_timeout(Some(Duration::from_millis(5000))).unwrap();
                         Transport::Tcp(BufStream::new(_tcp_stream))

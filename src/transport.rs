@@ -1,4 +1,5 @@
 use bufstream::BufStream;
+#[cfg(feature = "https")]
 use openssl::ssl::SslStream;
 use std::{
     io::{Read, Write},
@@ -9,6 +10,7 @@ use std::{
 #[allow(missing_debug_implementations)]
 pub enum Transport {
     /// Ssl stream
+    #[cfg(feature = "https")]
     Ssl(BufStream<SslStream<TcpStream>>),
     /// Tcp stream
     Tcp(BufStream<TcpStream>),
@@ -17,6 +19,7 @@ pub enum Transport {
 impl Write for Transport {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
+            #[cfg(feature = "https")]
             Transport::Ssl(socket) => socket.write(buf),
             Transport::Tcp(socket) => socket.write(buf),
         }
@@ -24,6 +27,7 @@ impl Write for Transport {
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
+            #[cfg(feature = "https")]
             Transport::Ssl(socket) => socket.flush(),
             Transport::Tcp(socket) => socket.flush(),
         }
@@ -33,6 +37,7 @@ impl Write for Transport {
 impl Read for Transport {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
+            #[cfg(feature = "https")]
             Transport::Ssl(socket) => socket.read(buf),
             Transport::Tcp(socket) => socket.read(buf),
         }
@@ -42,6 +47,7 @@ impl Read for Transport {
 impl std::io::BufRead for Transport {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
         match self {
+            #[cfg(feature = "https")]
             Transport::Ssl(socket) => socket.fill_buf(),
             Transport::Tcp(socket) => socket.fill_buf(),
         }
@@ -49,6 +55,7 @@ impl std::io::BufRead for Transport {
 
     fn consume(&mut self, amt: usize) {
         match self {
+            #[cfg(feature = "https")]
             Transport::Ssl(socket) => socket.consume(amt),
             Transport::Tcp(socket) => socket.consume(amt),
         }

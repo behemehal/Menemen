@@ -2,7 +2,7 @@
 #![deny(missing_debug_implementations)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, deny(warnings))]
-#![doc(html_root_url = "https://docs.rs/menemen/0.2.2-alpha")]
+#![doc(html_root_url = "https://docs.rs/menemen/0.3.2-alpha")]
 
 //!# Menemen
 //!Menemen is a Turkish food and also simple streaming http client.
@@ -25,7 +25,7 @@
 
 /// Various error types for Menemen
 pub mod error;
-/// Request module and http utilities 
+/// Request module and http utilities
 pub mod request;
 /// This module contains response structs and utilities enums
 pub mod response;

@@ -1,9 +1,9 @@
 [package]
 name = "menemen"
-version = "0.2.2-alpha" # Update ./src/lib path and ./tests/request::body_build_test version
+version = "0.3.2-alpha"
 authors = ["Behemehal", "Ahmetcan Aksu"]
 edition = "2021"
-description = "A streaming http request library "
+description = "A streaming http request library"
 categories = ["network-programming"]
 keywords = ["network", "http", "stream"]
 license = "GPL-2.0"
@@ -13,8 +13,12 @@ repository = "https://github.com/behemehal/Menemen"
 
 [dependencies]
 anyhow = "1.0.52"
-openssl = "0.10.36"
+openssl = { version = "0.10.36", optional = true }
 bufstream = { version = "0.1.4" }
+
+[features]
+default = []
+https = ["openssl"]
 
 [[example]]
 name = "download_file"
