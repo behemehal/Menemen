@@ -131,6 +131,7 @@ pub struct Request {
     headers: Vec<Header>,
     /// Timeout of the request [`u64`]
     timeout: u64,
+    redirect: bool,
     /// Is the request sent
     sent: bool,
 }
@@ -152,9 +153,26 @@ impl Request {
             content_type: ContentTypes::default(),
             headers,
             timeout: 5000,
+            redirect: true,
             sent: false,
         };
-        request.set_header("Host", &format!("{}:{}", url.host, url.port));
+        request.set_header(
+            "Host",
+            &format!(
+                "{}{}{}",
+                url.host,
+                if url.port == 443 || url.port == 80 {
+                    ""
+                } else {
+                    ":"
+                },
+                if url.port == 443 || url.port == 80 {
+                    "".to_string()
+                } else {
+                    url.port.to_string()
+                },
+            ),
+        );
         request.set_header("Connection", "close");
         request.set_header("Cache-Control", "max-age=0");
         request.set_header(
@@ -167,13 +185,27 @@ impl Request {
     /// Builds the request body
     pub fn build_request_body(&mut self) -> String {
         self.set_header("Content-Type", &self.content_type.clone().get_type());
+        //{protocol}://{host}{port}
         format!(
-            "{request_type} {protocol}://{host}:{port}/{path}{queryParams} HTTP/1.1\r\n\
+            "{request_type} /{path}{queryParams} HTTP/1.1\r\n\
             {headers}\r\n\r\n",
             request_type = self.request_type.get_type(),
-            protocol = if self.url.is_https { "https" } else { "http" },
-            host = self.url.host,
-            port = self.url.port,
+            //protocol = if self.url.is_https { "https" } else { "http" },
+            //host = self.url.host,
+            //port = format!(
+            //    "{}{}",
+            //    if self.url.port == 80 || self.url.port == 443 {
+            //        ""
+            //    } else {
+            //        ":"
+            //    },
+            //    if self.url.port == 80 || self.url.port == 443 {
+            //        "".to_string()
+            //    } else {
+            //        self.url.port.to_string()
+            //    },
+            //
+            //),
             path = self.url.paths.join("/"),
             queryParams = if self.url.query_params.is_empty() {
                 "".to_owned()
@@ -271,44 +303,51 @@ impl Request {
             return Err(error::RequestErrors::AlreadySent);
         } else {
             let socket_addr = (self.url.host.clone(), self.url.port);
-            #[cfg(feature = "http")]
-            {
-                let connector: Option<SslConnector> = if self.url.is_https {
-                    Some(match SslConnector::builder(SslMethod::tls()) {
-                        Ok(e) => e.build(),
-                        Err(_) => {
-                            return Err(error::RequestErrors::ConnectionError(
-                                "Failed to establish ssl connection".to_string(),
-                            ));
-                        }
-                    })
-                } else {
-                    None
-                };
-            }
+            #[cfg(feature = "https")]
+            let connector: Option<SslConnector> = if self.url.is_https {
+                Some(match SslConnector::builder(SslMethod::tls()) {
+                    Ok(e) => e.build(),
+                    Err(_) => {
+                        return Err(error::RequestErrors::ConnectionError(
+                            "Failed to establish ssl connection".to_string(),
+                        ));
+                    }
+                })
+            } else {
+                None
+            };
 
             match TcpStream::connect(socket_addr) {
                 Ok(mut _tcp_stream) => {
+                    #[cfg(feature = "https")]
+                    _tcp_stream
+                        .set_read_timeout(Some(Duration::from_millis(5000)))
+                        .unwrap();
+
+                    #[cfg(feature = "https")]
                     let mut tcp_stream = if self.url.is_https {
-                        #[cfg(feature = "http")]
-                        {
-                            _tcp_stream
-                                .set_read_timeout(Some(Duration::from_millis(5000)))
-                                .unwrap();
-                            Transport::Ssl(BufStream::new(
-                                connector
-                                    .unwrap()
-                                    .connect(&self.url.host, _tcp_stream)
-                                    .unwrap(),
-                            ))
-                        }
-                        panic!("HTTPS feature disabled, and not working as expected")
+                        Transport::Ssl(BufStream::new(
+                            connector
+                                .unwrap()
+                                .connect(&self.url.host, _tcp_stream)
+                                .unwrap(),
+                        ))
                     } else {
-                        //_tcp_stream.set_read_timeout(Some(Duration::from_millis(5000))).unwrap();
                         Transport::Tcp(BufStream::new(_tcp_stream))
                     };
+
+                    #[cfg(not(feature = "https"))]
+                    let mut tcp_stream = if self.url.is_https {
+                        panic!("HTTPS feature not enabled")
+                    } else {
+                        Transport::Tcp(BufStream::new(_tcp_stream))
+                    };
+
                     self.sent = true;
                     let request_body = self.build_request_body();
+                    println!("---\n{}", request_body);
+                    println!("---");
+
                     tcp_stream.write(request_body.as_bytes()).unwrap();
                     tcp_stream.flush().unwrap();
 
@@ -339,11 +378,55 @@ impl Request {
                                         }
                                     }
                                 }
-                                return Ok(Response {
-                                    response_info: connection_info,
-                                    headers,
-                                    stream: tcp_stream,
-                                });
+                                let redirected_location =
+                                    headers.iter().find(|x| x.name == "Location");
+                                if self.redirect
+                                    && redirected_location.is_some()
+                                    && (connection_info.status_code == 302
+                                        || connection_info.status_code == 303
+                                        || connection_info.status_code == 307
+                                        || connection_info.status_code == 308)
+                                {
+                                    return match Url::build_from_string(
+                                        redirected_location.unwrap().value.clone(),
+                                    ) {
+                                        Ok(new_url) => {
+                                            println!(
+                                                "REDIRECTING: {:?}",
+                                                redirected_location.unwrap()
+                                            );
+                                            self.url = new_url.clone();
+                                            self.sent = false;
+                                            self.set_header(
+                                                "Host",
+                                                &format!(
+                                                    "{}{}{}",
+                                                    new_url.host,
+                                                    if new_url.port == 443 || new_url.port == 80 {
+                                                        ""
+                                                    } else {
+                                                        ":"
+                                                    },
+                                                    if new_url.port == 443 || new_url.port == 80 {
+                                                        "".to_string()
+                                                    } else {
+                                                        new_url.port.to_string()
+                                                    },
+                                                ),
+                                            );
+                                            self.send()
+                                        }
+                                        Err(_) => Err(error::RequestErrors::ConnectionError(
+                                            "Redirect url is not correct".to_string(),
+                                        )),
+                                    };
+                                } else {
+                                    return Ok(Response {
+                                        response_info: connection_info,
+                                        headers,
+                                        stream: tcp_stream,
+                                    });
+                                }
                             } else {
                                 if !connection_info_collected {
                                     if let Ok(con_info) =
