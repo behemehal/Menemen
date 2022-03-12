@@ -1,15 +1,8 @@
-use menemen::{
-    request::{Request, RequestTypes, ContentTypes},
-    transport::Transport,
-};
+use menemen::request::{ContentTypes, Request, RequestTypes};
 use std::{fs::File, io::Read};
 
 fn main() {
-    let mut request = Request::new(
-        "https://postman-echo.com/post",
-        RequestTypes::POST,
-    )
-    .unwrap();
+    let mut request = Request::new("https://postman-echo.com/post", RequestTypes::POST).unwrap();
 
     //Read file
     let mut file = File::open("./examples/post.json").unwrap();
