@@ -2,10 +2,10 @@
 #![deny(missing_debug_implementations)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, deny(warnings))]
-#![doc(html_root_url = "https://docs.rs/menemen/0.3.2-alpha")]
+#![doc(html_root_url = "https://docs.rs/menemen/1.0.0")]
 
 //!# Menemen
-//!Menemen is a Turkish food and also simple streaming http client.
+//!Menemen is a Turkish food and also simple streaming http/https client.
 //!
 //!## Usage
 //!

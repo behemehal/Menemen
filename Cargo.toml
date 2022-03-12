@@ -1,6 +1,6 @@
 [package]
 name = "menemen"
-version = "0.4.3-alpha"
+version = "1.0.0"
 authors = ["Behemehal", "Ahmetcan Aksu"]
 edition = "2021"
 description = "A streaming http request library"
@@ -13,12 +13,8 @@ repository = "https://github.com/behemehal/Menemen"
 
 [dependencies]
 anyhow = "1.0.52"
-openssl = { version = "0.10.36", optional = true }
 bufstream = { version = "0.1.4" }
-
-[features]
-default = []
-https = ["openssl"]
+native-tls = "0.2"
 
 [[example]]
 name = "download_file"
@@ -31,3 +27,7 @@ path = "examples/echo.rs"
 [[example]]
 name = "parse_url"
 path = "examples/parse_url.rs"
+
+[[example]]
+name = "post"
+path = "examples/post.rs"

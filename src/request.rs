@@ -1,11 +1,11 @@
 use crate::{error, response::Response, response::ResponseInfo, transport::Transport, url::Url};
 use anyhow::Context;
 use bufstream::BufStream;
-#[cfg(feature = "https")]
-use openssl::ssl::{SslConnector, SslMethod};
+use native_tls::TlsConnector;
 use std::{
     io::{Read, Write},
     net::TcpStream,
+    time::Duration,
 };
 
 /// HTTP Header
@@ -183,8 +183,48 @@ impl Request {
     }
 
     /// Builds the request body
-    pub fn build_request_body(&mut self) -> String {
+    fn build_request_body(&mut self) -> String {
         self.set_header("Content-Type", &self.content_type.clone().get_type());
+        //{protocol}://{host}{port}
+        format!(
+            "{request_type} /{path}{queryParams} HTTP/1.1\r\n\
+            {headers}\r\n\r\n",
+            request_type = self.request_type.get_type(),
+            //protocol = if self.url.is_https { "https" } else { "http" },
+            //host = self.url.host,
+            //port = format!(
+            //    "{}{}",
+            //    if self.url.port == 80 || self.url.port == 443 {
+            //        ""
+            //    } else {
+            //        ":"
+            //    },
+            //    if self.url.port == 80 || self.url.port == 443 {
+            //        "".to_string()
+            //    } else {
+            //        self.url.port.to_string()
+            //    },
+            //
+            //),
+            path = self.url.paths.join("/"),
+            queryParams = if self.url.query_params.is_empty() {
+                "".to_owned()
+            } else {
+                "?".to_owned() + &self.url.join_query_params()
+            },
+            headers = self
+                .headers
+                .iter()
+                .map(|x| format!("{}:{}", x.name, x.value))
+                .collect::<Vec<_>>()
+                .join("\r\n")
+        )
+    }
+
+    /// Builds the request body
+    fn build_post_request_body(&mut self) -> String {
+        self.set_header("Content-Type", &self.content_type.clone().get_type());
+
         //{protocol}://{host}{port}
         format!(
             "{request_type} /{path}{queryParams} HTTP/1.1\r\n\
@@ -275,8 +315,9 @@ impl Request {
         if self.sent {
             Some(error::RequestErrors::CantSetHeadersAfterRequestSent)
         } else {
-            match self.headers.iter_mut().find(|h| h.name == key) {
-                Some(ref mut header) => {
+            let q = self.headers.iter_mut().find(|h| h.name == key);
+            match q {
+                Some(mut header) => {
                     header.value = value.to_string();
                 }
                 None => {
@@ -291,8 +332,106 @@ impl Request {
     }
 
     /// Send the request with body stream [NotImplemented]
-    pub fn send_with_body(&mut self) {
-        unimplemented!("Not supported yet")
+    pub fn send_with_body(
+        &mut self,
+        body: &mut dyn Read,
+    ) -> Result<Response, error::RequestErrors> {
+        if self.sent {
+            return Err(error::RequestErrors::AlreadySent);
+        } else {
+            let socket_addr = (self.url.host.clone(), self.url.port);
+
+            match TcpStream::connect(socket_addr) {
+                Ok(mut _tcp_stream) => {
+                    _tcp_stream
+                        .set_read_timeout(Some(Duration::from_millis(self.timeout)))
+                        .unwrap();
+
+                    let mut tcp_stream = if self.url.is_https {
+                        Transport::Ssl(BufStream::new(
+                            TlsConnector::new()
+                                .unwrap()
+                                .connect(&self.url.host, _tcp_stream)
+                                .unwrap(),
+                        ))
+                    } else {
+                        Transport::Tcp(BufStream::new(_tcp_stream))
+                    };
+                    let mut cbody = String::new();
+                    body.read_to_string(&mut cbody).unwrap();
+                    self.set_header("content-length", &cbody.len().to_string());
+                    let request_body = self.build_post_request_body();
+                    self.sent = true;
+                    tcp_stream.write(request_body.as_bytes()).unwrap();
+                    tcp_stream.write(cbody.as_bytes()).unwrap();
+                    tcp_stream.write(b"\r\n").unwrap();
+                    tcp_stream.flush().unwrap();
+
+                    let mut lines = vec![String::new()];
+                    let mut new_line = false;
+                    let mut connection_info_collected = false;
+                    let mut connection_info = ResponseInfo::default();
+                    let mut headers: Vec<Header> = Vec::new();
+                    let mut last_char = '\0';
+                    loop {
+                        let mut buffer = [0; 1];
+                        tcp_stream.read(&mut buffer).unwrap();
+                        //Convert byte to char
+                        let cchar = char::from(buffer[0]);
+                        //If its a line break
+                        if last_char == '\r' && cchar == '\n' {
+                            //If newline used again collect body
+                            if new_line {
+                                for line in &lines {
+                                    match Header::parse(line) {
+                                        Ok(header_line) => {
+                                            headers.push(header_line);
+                                        }
+                                        Err(_) => {
+                                            return Err(error::RequestErrors::ConnectionError(
+                                                "Malformed response header".to_string(),
+                                            ));
+                                        }
+                                    }
+                                }
+                                return Ok(Response {
+                                    response_info: connection_info,
+                                    headers,
+                                    stream: tcp_stream,
+                                });
+                            } else {
+                                if !connection_info_collected {
+                                    if let Ok(con_info) =
+                                        ResponseInfo::parse_response_info(&lines[0])
+                                    {
+                                        connection_info = con_info;
+                                        connection_info_collected = true;
+                                        lines = Vec::new();
+                                    } else {
+                                        return Err(error::RequestErrors::ConnectionError(
+                                            "Malformed response".to_string(),
+                                        ));
+                                    }
+                                }
+                                new_line = true;
+                            }
+                        } else {
+                            //If coming line is \r dont reset 'new_line'
+                            if cchar != '\r' {
+                                if new_line {
+                                    lines.push(String::new());
+                                }
+                                let line_len = lines.len();
+                                lines[line_len - 1] += &cchar.to_string();
+                                new_line = false;
+                            }
+                        }
+                        last_char = cchar;
+                    }
+                }
+                Err(e) => Err(error::RequestErrors::ConnectionError(e.to_string())),
+            }
+        }
     }
 
     /// Send the request without body stream
@@ -303,31 +442,16 @@ impl Request {
             return Err(error::RequestErrors::AlreadySent);
         } else {
             let socket_addr = (self.url.host.clone(), self.url.port);
-            #[cfg(feature = "https")]
-            let connector: Option<SslConnector> = if self.url.is_https {
-                Some(match SslConnector::builder(SslMethod::tls()) {
-                    Ok(e) => e.build(),
-                    Err(_) => {
-                        return Err(error::RequestErrors::ConnectionError(
-                            "Failed to establish ssl connection".to_string(),
-                        ));
-                    }
-                })
-            } else {
-                None
-            };
 
             match TcpStream::connect(socket_addr) {
                 Ok(mut _tcp_stream) => {
-                    #[cfg(feature = "https")]
                     _tcp_stream
-                        .set_read_timeout(Some(Duration::from_millis(5000)))
+                        .set_read_timeout(Some(Duration::from_millis(self.timeout)))
                         .unwrap();
 
-                    #[cfg(feature = "https")]
                     let mut tcp_stream = if self.url.is_https {
                         Transport::Ssl(BufStream::new(
-                            connector
+                            TlsConnector::new()
                                 .unwrap()
                                 .connect(&self.url.host, _tcp_stream)
                                 .unwrap(),
@@ -336,18 +460,8 @@ impl Request {
                         Transport::Tcp(BufStream::new(_tcp_stream))
                     };
 
-                    #[cfg(not(feature = "https"))]
-                    let mut tcp_stream = if self.url.is_https {
-                        panic!("HTTPS feature not enabled")
-                    } else {
-                        Transport::Tcp(BufStream::new(_tcp_stream))
-                    };
-
-                    self.sent = true;
                     let request_body = self.build_request_body();
-                    println!("---\n{}", request_body);
-                    println!("---");
-
+                    self.sent = true;
                     tcp_stream.write(request_body.as_bytes()).unwrap();
                     tcp_stream.flush().unwrap();
 
@@ -391,10 +505,6 @@ impl Request {
                                         redirected_location.unwrap().value.clone(),
                                     ) {
                                         Ok(new_url) => {
-                                            println!(
-                                                "REDIRECTING: {:?}",
-                                                redirected_location.unwrap()
-                                            );
                                             self.url = new_url.clone();
                                             self.sent = false;
                                             self.set_header(
