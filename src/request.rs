@@ -143,7 +143,7 @@ impl Request {
     /// * `request_type` - The type of request to send takes [`RequestTypes`]
     /// ## Returns
     /// [`Request`] if the request was successfully created else [`error::Error`]
-    pub fn new(url: &'static str, request_type: RequestTypes) -> anyhow::Result<Request> {
+    pub fn new(url: &str, request_type: RequestTypes) -> anyhow::Result<Request> {
         let url = crate::url::Url::build_from_string(url.to_string())
             .with_context(|| "Failed to parse url")?;
         let headers = Vec::new();
