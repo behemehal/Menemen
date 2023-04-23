@@ -1,6 +1,6 @@
 [package]
 name = "menemen"
-version = "1.0.2"
+version = "1.0.3"
 authors = ["Behemehal", "Ahmetcan Aksu"]
 edition = "2021"
 description = "A streaming http request library"
