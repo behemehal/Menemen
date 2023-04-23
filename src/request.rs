@@ -190,22 +190,6 @@ impl Request {
             "{request_type} /{path}{queryParams} HTTP/1.1\r\n\
             {headers}\r\n\r\n",
             request_type = self.request_type.get_type(),
-            //protocol = if self.url.is_https { "https" } else { "http" },
-            //host = self.url.host,
-            //port = format!(
-            //    "{}{}",
-            //    if self.url.port == 80 || self.url.port == 443 {
-            //        ""
-            //    } else {
-            //        ":"
-            //    },
-            //    if self.url.port == 80 || self.url.port == 443 {
-            //        "".to_string()
-            //    } else {
-            //        self.url.port.to_string()
-            //    },
-            //
-            //),
             path = self.url.paths.join("/"),
             queryParams = if self.url.query_params.is_empty() {
                 "".to_owned()
@@ -230,22 +214,6 @@ impl Request {
             "{request_type} /{path}{queryParams} HTTP/1.1\r\n\
             {headers}\r\n\r\n",
             request_type = self.request_type.get_type(),
-            //protocol = if self.url.is_https { "https" } else { "http" },
-            //host = self.url.host,
-            //port = format!(
-            //    "{}{}",
-            //    if self.url.port == 80 || self.url.port == 443 {
-            //        ""
-            //    } else {
-            //        ":"
-            //    },
-            //    if self.url.port == 80 || self.url.port == 443 {
-            //        "".to_string()
-            //    } else {
-            //        self.url.port.to_string()
-            //    },
-            //
-            //),
             path = self.url.paths.join("/"),
             queryParams = if self.url.query_params.is_empty() {
                 "".to_owned()
@@ -270,7 +238,7 @@ impl Request {
     /// ```
     /// use menemen::request::{Request, RequestTypes};
     ///
-    /// let mut request = Request::new("https://behemehal.net/test", RequestTypes::GET).unwrap();
+    /// let mut request = Request::new("https://behemehal.org/test", RequestTypes::GET).unwrap();
     /// request.set_timeout(5000);
     /// ```
     pub fn set_timeout(&mut self, timeout: u64) -> Option<error::RequestErrors> {
@@ -308,8 +276,8 @@ impl Request {
     /// ```
     /// use menemen::request::{Request, RequestTypes};
     ///
-    /// let mut request = Request::new("https://behemehal.net/test", RequestTypes::GET).unwrap();
-    /// request.set_header("Host", "behemehal.net");
+    /// let mut request = Request::new("https://behemehal.org/test", RequestTypes::GET).unwrap();
+    /// request.set_header("Host", "behemehal.org");
     /// ```
     pub fn set_header(&mut self, key: &str, value: &str) -> Option<error::RequestErrors> {
         if self.sent {
@@ -526,9 +494,12 @@ impl Request {
                                             );
                                             self.send()
                                         }
-                                        Err(_) => Err(error::RequestErrors::ConnectionError(
-                                            "Redirect url is not correct".to_string(),
-                                        )),
+                                        Err(_) => {
+                                            Err(error::RequestErrors::ConnectionError(format!(
+                                                "Redirect url is not correct '{}'",
+                                                redirected_location.unwrap().value.clone()
+                                            )))
+                                        }
                                     };
                                 } else {
                                     return Ok(Response {

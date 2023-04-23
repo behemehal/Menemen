@@ -18,20 +18,9 @@ fn byte_size_to_string(size: usize) -> String {
     }
 }
 
-//Convert seconds to string
-fn seconds_to_string(seconds: usize) -> String {
-    if seconds < 60 {
-        return format!("{}s", seconds);
-    } else if seconds < 60 * 60 {
-        return format!("{}m", seconds / 60);
-    } else {
-        return format!("{}h", seconds / 60 / 60);
-    }
-}
-
 fn main() {
     let mut request = Request::new(
-        "ipv4.download.thinkbroadband.com/20MB.zip",
+        "http://ipv4.download.thinkbroadband.com/1GB.zip",
         RequestTypes::GET,
     )
     .unwrap();
@@ -80,22 +69,15 @@ fn main() {
                                 elapsed_secs,
                             );
                         } else {
-                            let percent = stream_read_len as f64 / content_len as f64 * 100 as f64;
+                            let percent = stream_read_len / content_len * 100;
 
                             let output = format!(
-                                "Downloading: {} of {}; {}% {}ps | Active Time: {}s | Estimated : {}\n",
+                                "Downloading: {} of {}; {}% {}ps | Active Time: {}s\n",
                                 byte_size_to_string(stream_read_len),
                                 byte_size_to_string(content_len),
-                                percent as u64,
+                                percent,
                                 byte_size_to_string(speed_kbps),
                                 elapsed_secs,
-                                if speed_kbps == 0 {
-                                    "?".to_string()
-                                } else {
-                                    seconds_to_string(
-                                        (content_len - stream_read_len) / speed_kbps
-                                    )
-                                }
                             );
                             stdout.lock().write_all(output.as_bytes()).unwrap()
                         }

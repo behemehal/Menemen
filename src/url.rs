@@ -1,7 +1,7 @@
 use anyhow::{Context, Error};
 
 /// QueryParam
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct QueryParam {
     /// The name of the query parameter
     pub name: String,
@@ -10,7 +10,7 @@ pub struct QueryParam {
 }
 
 /// URL struct
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Url {
     /// Is url uses https
     pub is_https: bool,
@@ -32,10 +32,10 @@ impl Url {
     /// ## Example
     /// ```rust
     /// use menemen::url::Url;
-    /// let url = Url::build_from_string("https://behemehal.net/test?qtest=123".to_string()).unwrap();
+    /// let url = Url::build_from_string("https://behemehal.org/test?qtest=123".to_string()).unwrap();
     ///
     /// assert_eq!(url.is_https, true);
-    /// assert_eq!(url.host, "behemehal.net".to_string());
+    /// assert_eq!(url.host, "behemehal.org".to_string());
     /// assert_eq!(url.query_params.len(), 1);
     /// assert_eq!(url.query_params[0].name, "qtest".to_string());
     /// assert_eq!(url.query_params[0].value, "123".to_string());
@@ -44,39 +44,44 @@ impl Url {
     /// assert_eq!(url.paths[0], "test".to_string());
     /// ```
     pub fn build_from_string(url: String) -> Result<Url, Error> {
+        let mut new_url = url.clone();
         let protocol = url
             .split("://")
             .collect::<Vec<&str>>()
             .first()
             .with_context(|| "Failed to parse protocol")?
             .to_string();
-        let url_without_protocol = url
-            .split("://")
-            .collect::<Vec<&str>>()
-            .last()
-            .with_context(|| "Failed to parse host")?
-            .to_string();
+        new_url = new_url.replace(&format!("{}://", protocol.as_str()), "");
+        let (host, port) = {
+            let _host = if new_url.contains("/") {
+                new_url.split("/").collect::<Vec<&str>>()[0].to_string()
+            } else {
+                new_url.clone()
+            };
+            let host = if _host.contains(":") {
+                _host.split(":").collect::<Vec<&str>>()[0].to_string()
+            } else {
+                _host.clone()
+            };
 
-        let host = if url_without_protocol.contains("/") {
-            url_without_protocol.split("/").collect::<Vec<&str>>()[0].to_string()
-        } else if url_without_protocol.contains(":") {
-            url_without_protocol.split(":").collect::<Vec<&str>>()[0].to_string()
-        } else {
-            url_without_protocol.clone()
-        };
-
-        let port = if url_without_protocol.contains(":") {
-            url_without_protocol.split(":").collect::<Vec<&str>>()[1]
+            let _port = if _host.contains(":") {
+                _host.split(":").collect::<Vec<&str>>()[1].to_string()
+            } else if protocol == "https" {
+                "443".to_string()
+            } else {
+                "80".to_string()
+            };
+            let port = _port
                 .parse::<u16>()
-                .with_context(|| "Failed to parse port")?
-        } else if protocol == "https" {
-            443
-        } else {
-            80
+                .with_context(|| "Failed to parse port")?;
+            (host, port)
         };
-
-        let paths = if url_without_protocol.contains("/") {
-            url_without_protocol.split("/").collect::<Vec<&str>>()[1..]
+        new_url = format!(
+            "/{}",
+            new_url.split("/").collect::<Vec<&str>>()[1..].join("/")
+        );
+        let paths = if new_url.contains("/") && new_url != "/" {
+            new_url.split("/").collect::<Vec<&str>>()[1..]
                 .iter()
                 .map(|s| {
                     if s.contains("?") {
@@ -89,21 +94,11 @@ impl Url {
         } else {
             vec![]
         };
-
         let query_params = if paths.len() == 0 {
             vec![]
-        } else if url_without_protocol.split("/").collect::<Vec<&str>>()[1..]
-            .last()
-            .with_context(|| "Failed to parse url")?
-            .contains("?")
-        {
-            url_without_protocol.split("/").collect::<Vec<&str>>()[1..]
-                .last()
-                .with_context(|| "Failed to parse url")?
-                .split("?")
-                .collect::<Vec<&str>>()
-                .last()
-                .with_context(|| "Failed to parse url")?
+        } else if new_url.contains("?") {
+            new_url = new_url.split("?").collect::<Vec<&str>>()[1].to_string();
+            new_url
                 .split("&")
                 .map(|x| {
                     let param = x.split("=").collect::<Vec<&str>>();
@@ -123,10 +118,10 @@ impl Url {
 
         Ok(Url {
             is_https: protocol == "https",
-            host: host.to_string(),
+            host,
             port,
             paths,
-            query_params: query_params,
+            query_params,
         })
     }
 
@@ -137,7 +132,7 @@ impl Url {
     /// ## Example
     /// ```
     /// use menemen::url::Url;
-    /// let url = Url::build_from_string("https://behemehal.com/test?first=test&second=test".to_string()).unwrap();
+    /// let url = Url::build_from_string("https://behemehal.org/test?first=test&second=test".to_string()).unwrap();
     /// let joiner_query_params = url.join_query_params();
     /// assert_eq!(joiner_query_params, "first=test&second=test".to_string());
     /// ```

@@ -1,10 +1,10 @@
 fn main() {
-    match menemen::url::Url::build_from_string("https://behemehal.net/test?qtest=123".to_string()) {
+    match menemen::url::Url::build_from_string("https://example.com".to_string()) {
         Ok(url) => {
             println!("{:#?}", url);
         }
-        Err(_) => {
-            println!("Failed to parse url");
+        Err(e) => {
+            println!("Failed to parse url: {:?}", e);
         }
     }
 }
