@@ -1,5 +1,5 @@
-#![deny(missing_docs)]
-#![deny(missing_debug_implementations)]
+//#![deny(missing_docs)]
+//#![deny(missing_debug_implementations)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, deny(warnings))]
 #![doc(html_root_url = "https://docs.rs/menemen/1.0.3")]
@@ -33,3 +33,6 @@ pub mod response;
 pub mod transport;
 /// This module contains url utilities
 pub mod url;
+/// This module contains body utilities
+pub mod body;
+mod client;

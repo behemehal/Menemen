@@ -11,13 +11,19 @@ readme = "README.md"
 documentation = "https://docs.rs/menemen"
 repository = "https://github.com/behemehal/Menemen"
 
+[features]
+default = ["async", "https"]
+https = ["native-tls"]
+async = ["tokio"]
+
 [dependencies]
 anyhow = "1.0.52"
 bufstream = { version = "0.1.4" }
-native-tls = "0.2"
+native-tls = { version = "0.2.12", optional = true }
+tokio = { version = "1", features = ["net"], optional = true }
 
 [dev-dependencies]
-libflate = "1.3.0"
+libflate = "2.1.0"
 
 [[example]]
 name = "download_file"

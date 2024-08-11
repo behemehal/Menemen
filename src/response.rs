@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::request;
 use crate::transport::Transport;
 use anyhow::Context;
@@ -20,6 +22,7 @@ impl ResponseInfo {
     /// ## Returns
     /// [`ResponseInfo`] if the answer was successfully parsed else [`anyhow::Error`]
     pub fn parse_response_info(response: &str) -> Result<ResponseInfo, anyhow::Error> {
+        println!("Response: {}", response);
         let mut response_info = ResponseInfo {
             http_version: String::new(),
             status_code: 0,
@@ -50,4 +53,13 @@ pub struct Response {
     pub headers: Vec<request::Header>,
     /// Incoming body stream
     pub stream: Transport,
+}
+
+impl Debug for Response {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Response")
+            .field("response_info", &self.response_info)
+            .field("headers", &self.headers)
+            .finish()
+    }
 }
