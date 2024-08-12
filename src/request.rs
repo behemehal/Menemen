@@ -487,12 +487,15 @@ impl Request {
     /// Send the request with non-blocking async
     /// ## Returns
     /// [`Response`] if the request was sent successfully else [`error::RequestError`]
-    pub fn send_blocked(&mut self) -> Result<Response, error::RequestError> {
+    pub async fn send(&mut self) -> Result<Transport, error::RequestError> {
         if self.sent {
             return Err(error::RequestError::AlreadySent);
         } else {
             let client = Client::new(self.url.clone());
-            client.send_request(self.url.is_https && cfg!(feature = "https"), self)
+            let transport = client.send_request(self.url.is_https && cfg!(feature = "https"), self).await?
+            Response {
+                
+            }
         }
     }
 }

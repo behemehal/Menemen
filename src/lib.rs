@@ -9,7 +9,7 @@
 //!
 //!## Usage
 //!
-//! ```
+//!```
 //! use std::io::{Write, Read};
 //! use menemen::request::{Request, RequestTypes};
 //!
@@ -17,7 +17,7 @@
 //!    let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
 //!    let mut response = request.send().unwrap();
 //!    let mut text_buffer = Vec::new();
-//!    response.stream.read_to_end(&mut text_buffer);
+//!    response.stream.read_to_end(&mut text_buffer).expect("TODO: panic message");
 //!    println!("Text: {}", String::from_utf8_lossy(&text_buffer));
 //! }
 //! ```

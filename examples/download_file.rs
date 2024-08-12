@@ -1,20 +1,28 @@
 use menemen::request::{ContentTypes, Request, RequestTypes};
 use std::{
     fs::File,
-    io::{self},
-    io::{BufRead, Write},
+    io::{self, Write, Read},
     panic,
-    time::Instant,
+    time::{Instant, Duration},
 };
 
-//Convert byte size to string
+// Convert byte size to string
 fn byte_size_to_string(size: usize) -> String {
     if size < 1024 {
-        return format!("{}B", size);
+        format!("{}B", size)
     } else if size < 1024 * 1024 {
-        return format!("{}KB", (size / 1024));
+        format!("{}KB", size / 1024)
     } else {
-        return format!("{}MB", (size / 1024 / 1024));
+        format!("{}MB", size / 1024 / 1024)
+    }
+}
+
+// Convert speed to string in Kbps or Mbps
+fn speed_to_string(speed_kbps: f64) -> String {
+    if speed_kbps < 1024.0 {
+        format!("{:.2} Kbps", speed_kbps)
+    } else {
+        format!("{:.2} Mbps", speed_kbps / 1024.0)
     }
 }
 
@@ -23,72 +31,73 @@ fn main() {
         "http://ipv4.download.thinkbroadband.com/1GB.zip",
         RequestTypes::GET,
     )
-    .unwrap();
+        .unwrap();
     request.set_header("Connection", "close");
     request.content_type = ContentTypes::OctetStream;
+
     match request.send() {
-        Ok(mut e) => {
+        Ok(mut response) => {
             let mut file = File::create("./20MB.zip").unwrap();
             let mut since_ms = Instant::now();
-            let mut speed_kbps = 0;
+            let mut last_instant = Instant::now();
             let mut collected_byte_len = 0;
-            let mut elapsed_secs = 0;
             let mut stream_read_len = 0;
             let stdout = io::stdout();
 
-            let content_len = match e.headers.iter_mut().find(|h| h.name == "Content-Length") {
-                Some(header) => match header.value.parse::<usize>() {
-                    Ok(d) => d,
-                    Err(_) => 0,
-                },
+            let content_len = match response.headers.iter_mut().find(|h| h.name == "Content-Length") {
+                Some(header) => header.value.parse::<usize>().unwrap_or_else(|_| 0),
                 None => 0,
             };
 
+            let mut buffer = [0; 8192 * 2];  // Buffer of 8KB
             loop {
-                let mut buffer: Vec<u8> = Vec::new();
-                match e.stream.read_until(0, &mut buffer) {
-                    Ok(q) => {
-                        stream_read_len += buffer.len();
-                        if q == 0 {
+                match response.stream.read(&mut buffer) {
+                    Ok(read_bytes) => {
+                        if read_bytes == 0 {
                             break;
                         }
 
-                        //To calculate kbps we should keep track of the time between 1kb
-                        if since_ms.elapsed().as_secs() > 1 {
-                            speed_kbps = collected_byte_len;
-                            elapsed_secs += 1;
-                            collected_byte_len = 0;
-                            since_ms = Instant::now();
-                        }
-                        collected_byte_len += buffer.len();
-                        if content_len == 0 {
-                            println!(
-                                "Downloading Without Content Len: {}bytes with: {}kbps | Active Time: {}s",
-                                byte_size_to_string(content_len),
-                                byte_size_to_string(speed_kbps) ,
-                                elapsed_secs,
-                            );
-                        } else {
-                            let percent = stream_read_len / content_len * 100;
+                        stream_read_len += read_bytes;
+                        collected_byte_len += read_bytes;
 
-                            let output = format!(
-                                "Downloading: {} of {}; {}% {}ps | Active Time: {}s\n",
-                                byte_size_to_string(stream_read_len),
-                                byte_size_to_string(content_len),
-                                percent,
-                                byte_size_to_string(speed_kbps),
-                                elapsed_secs,
-                            );
-                            stdout.lock().write_all(output.as_bytes()).unwrap()
+                        let elapsed_duration = last_instant.elapsed();
+                        if elapsed_duration >= Duration::from_secs(1) {
+                            let elapsed_secs = elapsed_duration.as_secs_f64();
+                            let speed_kbps = collected_byte_len as f64 / elapsed_secs / 1024.0;
+                            collected_byte_len = 0;
+                            last_instant = Instant::now();
+
+                            if content_len == 0 {
+                                println!(
+                                    "Downloading Without Content Len: {} | Speed: {} | Active Time: {}s",
+                                    byte_size_to_string(stream_read_len),
+                                    speed_to_string(speed_kbps),
+                                    since_ms.elapsed().as_secs(),
+                                );
+                            } else {
+                                let percent = (stream_read_len as f64 / content_len as f64) * 100.0;
+
+                                let output = format!(
+                                    "\rDownloading: {} of {}; {:.2}% | Speed: {} | Active Time: {}s",
+                                    byte_size_to_string(stream_read_len),
+                                    byte_size_to_string(content_len),
+                                    percent,
+                                    speed_to_string(speed_kbps),
+                                    since_ms.elapsed().as_secs(),
+                                );
+                                stdout.lock().write_all(output.as_bytes()).unwrap();
+                                stdout.lock().flush().unwrap();
+                            }
                         }
-                        file.write(&buffer).unwrap();
+
+                        file.write_all(&buffer[..read_bytes]).unwrap();
                     }
                     Err(e) => {
-                        panic!("E {}", e)
+                        panic!("Error reading stream: {}", e);
                     }
                 };
             }
-            println!("Download complete");
+            println!("\nDownload complete");
         }
         Err(e) => {
             println!("Request failed: {:#?}", e);

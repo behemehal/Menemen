@@ -1,14 +1,29 @@
+use std::io::Cursor;
+
+#[cfg(not(feature = "async"))]
 use std::{
     fs::File,
-    io::{Cursor, Read, Write},
+    io::{Read, Write},
 };
+
+#[cfg(feature = "async")]
+use std::pin::Pin;
+use tokio::{fs::File as TokioFile, io::AsyncRead};
 
 pub struct Body {
     body: BodyType,
 }
 
 impl Body {
+    #[cfg(not(feature = "async"))]
     pub fn from_reader<R: Read + 'static>(reader: R) -> Body {
+        Body {
+            body: BodyType::Reader(Box::new(reader)),
+        }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn from_reader<R: AsyncRead + Unpin + 'static>(reader: R) -> Body {
         Body {
             body: BodyType::Reader(Box::new(reader)),
         }
@@ -17,6 +32,13 @@ impl Body {
     pub fn from_bytes(bytes: Vec<u8>) -> Body {
         Body {
             body: BodyType::Bytes(bytes),
+        }
+    }
+
+    pub fn size_hint(&self) -> Option<usize> {
+        match &self.body {
+            BodyType::Reader(reader) => None,
+            BodyType::Bytes(bytes) => Some(bytes.len()),
         }
     }
 }
@@ -31,16 +53,21 @@ impl std::fmt::Debug for Body {
 }
 
 pub enum BodyType {
+    #[cfg(feature = "async")]
+    Reader(Box<dyn AsyncRead + Unpin>),
+    #[cfg(not(feature = "async"))]
     Reader(Box<dyn Read>),
     Bytes(Vec<u8>),
 }
 
+#[cfg(not(feature = "async"))]
 impl Read for Body {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.body.read(buf)
     }
 }
 
+#[cfg(not(feature = "async"))]
 impl Read for BodyType {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
@@ -50,6 +77,38 @@ impl Read for BodyType {
     }
 }
 
+#[cfg(feature = "async")]
+impl AsyncRead for Body {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let mut pinned = Pin::new(&mut self.get_mut().body);
+        pinned.as_mut().poll_read(cx, buf)
+    }
+}
+
+#[cfg(feature = "async")]
+impl AsyncRead for BodyType {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match &mut *self {
+            BodyType::Reader(mut reader) => Pin::new(&mut reader).poll_read(cx, buf),
+            BodyType::Bytes(bytes) => {
+                let mut cursor = Cursor::new(bytes);
+                let mut pinned = Pin::new(&mut cursor);
+                pinned.as_mut().poll_read(cx, buf)
+            }
+        }
+    }
+}
+//
+
+#[cfg(not(feature = "async"))]
 impl Write for Body {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.body.write(buf)
@@ -60,6 +119,7 @@ impl Write for Body {
     }
 }
 
+#[cfg(not(feature = "async"))]
 impl Write for BodyType {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
@@ -117,8 +177,16 @@ impl From<&'static str> for Body {
     }
 }
 
+#[cfg(not(feature = "async"))]
 impl From<File> for Body {
     fn from(file: File) -> Body {
+        Body::from_reader(file)
+    }
+}
+
+#[cfg(feature = "async")]
+impl From<TokioFile> for Body {
+    fn from(file: TokioFile) -> Body {
         Body::from_reader(file)
     }
 }

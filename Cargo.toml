@@ -12,15 +12,17 @@ documentation = "https://docs.rs/menemen"
 repository = "https://github.com/behemehal/Menemen"
 
 [features]
-default = ["async", "https"]
+default = ["async", "https", "https-async"]
 https = ["native-tls"]
+https-async = ["tokio-native-tls"]
 async = ["tokio"]
 
 [dependencies]
-anyhow = "1.0.52"
+anyhow = "1.0.86"
 bufstream = { version = "0.1.4" }
 native-tls = { version = "0.2.12", optional = true }
-tokio = { version = "1", features = ["net"], optional = true }
+tokio = { version = "1.39.2", features = ["net", "io-util", "fs"], optional = true }
+tokio-native-tls = { version = "0.3.1", optional = true }
 
 [dev-dependencies]
 libflate = "2.1.0"
