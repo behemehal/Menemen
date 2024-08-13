@@ -1,3 +1,5 @@
+use std::fmt;
+use std::fmt::Debug;
 use std::net::TcpStream;
 
 #[cfg(feature = "https")]
@@ -19,6 +21,23 @@ pub enum RequestError {
     /// Connection error occurred with string
     ConnectionError(String),
 }
+
+// Implement `fmt::Display` for `RequestError`
+impl fmt::Display for RequestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RequestError::CantSetHeadersAfterRequestSent => write!(f, "Cannot set headers after request sent"),
+            RequestError::CantResolveUrl => write!(f, "Cannot resolve given URL"),
+            RequestError::ConnectionTimeout => write!(f, "Connection timed out"),
+            RequestError::MalformedUrl => write!(f, "Given URL is malformed"),
+            RequestError::AlreadySent => write!(f, "Request already sent"),
+            RequestError::ConnectionError(err) => write!(f, "Connection error: {}", err),
+        }
+    }
+}
+
+// Implement `std::error::Error` for `RequestError`
+impl std::error::Error for RequestError {}
 
 impl From<std::io::Error> for RequestError {
     fn from(error: std::io::Error) -> Self {
@@ -56,5 +75,11 @@ impl From<String> for RequestError {
 impl From<&str> for RequestError {
     fn from(error: &str) -> Self {
         RequestError::ConnectionError(error.to_string())
+    }
+}
+
+impl From<anyhow::Error> for RequestError {
+    fn from(value: anyhow::Error) -> Self {
+        RequestError::ConnectionError(value.to_string())
     }
 }

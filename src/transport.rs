@@ -3,7 +3,8 @@ use bufstream::BufStream;
 
 #[cfg(feature = "async")]
 use std::pin::Pin;
-use tokio::io::{AsyncRead, AsyncWrite, BufStream};
+#[cfg(feature = "async")]
+use tokio::io::{AsyncBufRead, AsyncRead, AsyncWrite, BufStream};
 
 #[cfg(all(feature = "https", not(feature = "async")))]
 use native_tls::TlsStream;
@@ -17,7 +18,7 @@ use std::{
     io::{BufRead, Read, Write},
     net::TcpStream,
 };
-
+use std::task::{Context, Poll};
 #[cfg(feature = "async")]
 use tokio::net::TcpStream;
 
@@ -117,6 +118,25 @@ impl AsyncRead for Transport {
             #[cfg(feature = "https")]
             Transport::Ssl(stream) => Pin::new(stream).poll_read(cx, buf),
             Transport::Tcp(socket) => Pin::new(socket).poll_read(cx, buf),
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+impl AsyncBufRead for Transport {
+    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<&[u8]>> {
+        match self.get_mut() {
+            #[cfg(feature = "https")]
+            Transport::Ssl(stream) => Pin::new(stream).poll_fill_buf(cx),
+            Transport::Tcp(stream) => Pin::new(stream).poll_fill_buf(cx),
+        }
+    }
+
+    fn consume(mut self: Pin<&mut Self>, amt: usize) {
+        match &mut *self {
+            #[cfg(feature = "https")]
+            Transport::Ssl(stream) => Pin::new(stream).consume(amt),
+            Transport::Tcp(socket) => Pin::new(socket).consume(amt),
         }
     }
 }

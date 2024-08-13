@@ -8,6 +8,7 @@ use std::{
 
 #[cfg(feature = "async")]
 use std::pin::Pin;
+#[cfg(feature = "async")]
 use tokio::{fs::File as TokioFile, io::AsyncRead};
 
 pub struct Body {
@@ -37,7 +38,7 @@ impl Body {
 
     pub fn size_hint(&self) -> Option<usize> {
         match &self.body {
-            BodyType::Reader(reader) => None,
+            BodyType::Reader(_) => None,
             BodyType::Bytes(bytes) => Some(bytes.len()),
         }
     }
@@ -92,12 +93,12 @@ impl AsyncRead for Body {
 #[cfg(feature = "async")]
 impl AsyncRead for BodyType {
     fn poll_read(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        match &mut *self {
-            BodyType::Reader(mut reader) => Pin::new(&mut reader).poll_read(cx, buf),
+        match self.get_mut() {
+            BodyType::Reader(reader) => Pin::new(reader).poll_read(cx, buf),
             BodyType::Bytes(bytes) => {
                 let mut cursor = Cursor::new(bytes);
                 let mut pinned = Pin::new(&mut cursor);

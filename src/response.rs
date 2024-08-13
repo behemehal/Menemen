@@ -4,6 +4,12 @@ use crate::request;
 use crate::transport::Transport;
 use anyhow::Context;
 
+#[cfg(feature = "async")]
+use tokio::io::AsyncReadExt;
+
+#[cfg(not(feature = "async"))]
+use std::io::Read;
+
 /// ResponseInfo struct
 #[derive(Clone, Debug, Default)]
 pub struct ResponseInfo {
@@ -53,6 +59,8 @@ pub struct Response {
     pub headers: Vec<request::Header>,
     /// Incoming body stream
     pub stream: Transport,
+    /// Flag that indicates if the response is already consumed
+    pub consumed: bool,
 }
 
 impl Debug for Response {
@@ -61,5 +69,40 @@ impl Debug for Response {
             .field("response_info", &self.response_info)
             .field("headers", &self.headers)
             .finish()
+    }
+}
+
+impl Response {
+    #[cfg(feature = "async")]
+    pub async fn text(&mut self) -> Result<String, std::io::Error> {
+        self.consumed = true;
+        let mut string = String::new();
+        self.stream.read_to_string(&mut string).await?;
+        Ok(string)
+    }
+    
+    #[cfg(not(feature = "async"))]
+    pub fn text(&mut self) -> Result<String, std::io::Error> {
+        self.consumed = true;
+        let mut string = String::new();
+        self.stream.read_to_string(&mut string);
+        Ok(string)
+    }
+    
+    
+    #[cfg(all(feature = "async", feature = "json"))]
+    pub async fn json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, std::io::Error> {
+        self.consumed = true;
+        let string = self.text().await?;
+        let json: T = serde_json::from_str(&string)?;
+        Ok(json)
+    }
+    
+    #[cfg(all(not(feature = "async"), feature = "json"))]
+    pub fn json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, std::io::Error> {
+        self.consumed = true;
+        let string = self.text()?;
+        let json: T = serde_json::from_str(&string)?;
+        Ok(json)
     }
 }

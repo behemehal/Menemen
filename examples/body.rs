@@ -1,4 +1,4 @@
-use std::{fs::File, io::Cursor};
+use std::{io::Cursor};
 
 use menemen::body::Body;
 
@@ -8,7 +8,7 @@ fn main() {
     // Using Into for &str
     let mut body_from_str: Body = string_body.into();
 
-    // Using Into for String
+    // Using Into for Strin
     let string = String::from("Another test string.");
     let mut body_from_string: Body = string.into();
 
@@ -16,20 +16,12 @@ fn main() {
     let data = vec![1, 2, 3, 4];
     let mut body_from_vec: Body = data.into();
 
-/*     let array_data: [u8; 4] = [1, 2, 3, 4];
-    let mut body_from_array: Body = array_data.into(); */
-
     // Using Into for something that implements Read
     let cursor = Cursor::new(vec![5, 6, 7, 8]);
     let mut body_from_reader: Body = cursor.into();
 
-    let mut file_data = File::open("./Cargo.toml").unwrap();
-    let mut body_from_file: Body = file_data.into();
-
     println!("Body from &str: {:?}", body_from_str);
     println!("Body from String: {:?}", body_from_string);
     println!("Body from Vec<u8>: {:?}", body_from_vec);
-/*     println!("Body from Array: {:?}", body_from_array); */
     println!("Body from Cursor<Vec<u8>>: {:?}", body_from_reader);
-    println!("Body from File: {:?}", body_from_file);
 }
