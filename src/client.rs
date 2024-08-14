@@ -8,6 +8,9 @@ use std::io::{Read, Write, copy, BufRead};
 #[cfg(feature = "async")]
 use tokio::{io::{BufStream}, net::TcpStream};
 
+#[cfg(feature = "async")]
+use tokio::io::AsyncWriteExt;
+
 #[cfg(not(feature = "async"))]
 use std::net::TcpStream;
 
@@ -67,7 +70,11 @@ impl Client {
     /// ## Returns
     /// [`anyhow::Result`] with [`Response`] if the request was successful else [`anyhow::Error`]
     #[cfg(not(feature = "async"))]
-    pub fn send_request(&self, tls: bool, request: &mut Request) -> Result<Response, RequestError> {
+    pub fn send_request(
+        &self,
+        tls: bool,
+        request: &mut Request,
+    ) -> Result<Response, RequestError> {
         let stream = self.connect()?;
 
         let mut stream = if tls && cfg!(feature = "https") {
@@ -140,8 +147,6 @@ impl Client {
         tls: bool,
         request: &mut Request,
     ) -> Result<Response, RequestError> {
-        use tokio::io::AsyncWriteExt;
-
         let stream = self.connect().await?;
 
         let mut stream = if tls && cfg!(all(feature = "https", feature = "https-async")) {

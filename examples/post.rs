@@ -4,8 +4,12 @@ use std::{fs::File, io::Read};
 fn main() {
     let mut request = Request::new("https://postman-echo.com/post", RequestTypes::POST).unwrap();
 
-    //Read file
     let mut file = File::open("./examples/post.json").unwrap();
+    request.body(
+        
+    )
+
+    //Read file
     request.content_type = ContentTypes::JSON;
     let mut response = request.send_with_body(&mut file).unwrap();
     let mut text_buffer = Vec::new();
