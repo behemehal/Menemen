@@ -155,7 +155,7 @@ impl Client {
                 let stream = TokioTlsConnector::from(connector)
                     .connect(&self.url.host, stream)
                     .await?;
-                Transport::Ssl(BufStream::new(stream));
+                Transport::Ssl(BufStream::new(stream))
             }
             #[cfg(not(feature = "https"))]
             {
