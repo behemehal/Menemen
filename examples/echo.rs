@@ -1,6 +1,8 @@
-use serde::{Deserialize, Serialize};
-use tokio::io::AsyncReadExt;
 use menemen::request::{Request, RequestTypes};
+use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "async")]
+use tokio::io::AsyncReadExt;
 
 #[derive(Serialize, Deserialize)]
 struct Headers {
@@ -37,11 +39,10 @@ struct Root {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
     let mut response = request.send().await?;
-    
+
     //let response_string = response.text().await?;
     let response_json = response.json::<Root>().await?;
-    
-    
+
     //println!("Response: ({:#?}): {}", response.response_info.status_code, response_string);
     //println!("Response: ({:#?}): {:?}", response.response_info.status_code, response_json);
     Ok(())
@@ -51,11 +52,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
     let mut response = request.send()?;
-    
+
+    println!("Response: {:#?}", response.response_info);
+
     //let response_string = response.text()?;
-    let response_json = response.json::<Root>()?;
-    
-    //println!("Response: ({:#?}): {}", response.response_info.status_code, response_string);
-    //println!("Response: ({:#?}): {:?}", response.response_info.status_code, response_json);
+    #[cfg(feature = "json")]
+    let response = response.json::<Root>()?;
+
+    #[cfg(not(feature = "json"))]
+    let response = response.text()?;
+
+    println!("Response: {:#?}", response);
     Ok(())
 }

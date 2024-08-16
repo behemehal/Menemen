@@ -16,13 +16,21 @@
 //! fn main() {
 //!    let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
 //!    let mut response = request.send().unwrap();
+//! 
+//!    // Stream response
 //!    let mut text_buffer = Vec::new();
 //!    response.stream.read_to_end(&mut text_buffer).expect("TODO: panic message");
 //!    println!("Text: {}", String::from_utf8_lossy(&text_buffer));
+//!    //or
+//!    let text = response.text().unwrap();
+//!    println!("Text: {}", text);
 //! }
 //! ```
 //! You can find more examples [here](https://github.com/behemehal/Menemen/tree/main/examples)
 
+/// This module contains body utilities
+pub mod body;
+mod client;
 /// Various error types for Menemen
 pub mod error;
 /// Request module and http utilities
@@ -33,6 +41,3 @@ pub mod response;
 pub mod transport;
 /// This module contains url utilities
 pub mod url;
-/// This module contains body utilities
-pub mod body;
-mod client;

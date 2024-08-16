@@ -3,10 +3,10 @@ use crate::{
 };
 
 #[cfg(not(feature = "async"))]
-use std::io::{Read, Write, copy, BufRead};
+use std::io::{copy, BufRead, Write};
 
 #[cfg(feature = "async")]
-use tokio::{io::{BufStream}, net::TcpStream};
+use tokio::{io::BufStream, net::TcpStream};
 
 #[cfg(feature = "async")]
 use tokio::io::AsyncWriteExt;
@@ -17,14 +17,14 @@ use std::net::TcpStream;
 #[cfg(not(feature = "async"))]
 use bufstream::BufStream;
 
+use crate::request::Header;
+use crate::response::ResponseInfo;
 #[cfg(feature = "https")]
 use native_tls::TlsConnector;
 #[cfg(feature = "async")]
 use tokio::io::AsyncBufReadExt;
 #[cfg(all(feature = "https", feature = "async", feature = "https-async"))]
 use tokio_native_tls::TlsConnector as TokioTlsConnector;
-use crate::request::Header;
-use crate::response::ResponseInfo;
 
 pub struct Client {
     url: Url,
@@ -70,34 +70,32 @@ impl Client {
     /// ## Returns
     /// [`anyhow::Result`] with [`Response`] if the request was successful else [`anyhow::Error`]
     #[cfg(not(feature = "async"))]
-    pub fn send_request(
-        &self,
-        tls: bool,
-        request: &mut Request,
-    ) -> Result<Response, RequestError> {
+    pub fn send_request(&self, tls: bool, request: &mut Request) -> Result<Response, RequestError> {
         let stream = self.connect()?;
 
-        let mut stream = if tls && cfg!(feature = "https") {
-            #[cfg(feature = "https")] {
-                let connector =
-                    TlsConnector::new().map_err(|e| RequestError::ConnectionError(e.to_string()))?;
+        let mut stream = if tls {
+            #[cfg(feature = "https")]
+            {
+                let connector = TlsConnector::new()
+                    .map_err(|e| RequestError::ConnectionError(e.to_string()))?;
                 let stream = connector.connect(&self.url.host, stream)?;
                 Transport::Ssl(BufStream::new(stream))
             }
-            unreachable!()
+            #[cfg(not(feature = "https"))]
+            {
+                return Err(RequestError::TlsNotEnabled);
+            }
         } else {
             Transport::Tcp(BufStream::new(stream))
         };
 
         if let Some(ref mut body_to_send) = &mut request.body_to_send {
             if let Some(size_hint) = body_to_send.size_hint() {
-                println!("Setting Content-Length: {}", size_hint);
                 request.set_header("Content-Length", &size_hint.to_string());
             }
         }
 
-        stream
-            .write_all(request.build_request_body().as_bytes())?;
+        stream.write_all(request.build_request_body().as_bytes())?;
 
         if let Some(ref mut body_to_send) = &mut request.body_to_send {
             copy(body_to_send, &mut stream)?;
@@ -149,8 +147,8 @@ impl Client {
     ) -> Result<Response, RequestError> {
         let stream = self.connect().await?;
 
-        let mut stream = if tls && cfg!(all(feature = "https", feature = "https-async")) {
-            #[cfg(all(feature = "https", feature = "https-async"))]
+        let mut stream = if tls {
+            #[cfg(feature = "https-async")]
             {
                 let connector = TlsConnector::new()
                     .map_err(|e| RequestError::ConnectionError(e.to_string()))?;
@@ -159,14 +157,16 @@ impl Client {
                     .await?;
                 Transport::Ssl(BufStream::new(stream));
             }
-            unreachable!()
+            #[cfg(not(feature = "https"))]
+            {
+                return Err(RequestError::TlsNotEnabled);
+            }
         } else {
             Transport::Tcp(BufStream::new(stream))
         };
 
         if let Some(ref mut body_to_send) = &mut request.body_to_send {
             if let Some(size_hint) = body_to_send.size_hint() {
-                println!("Setting Content-Length: {}", size_hint);
                 request.set_header("Content-Length", &size_hint.to_string());
             }
         }

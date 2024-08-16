@@ -1,8 +1,10 @@
-use serde::{Deserialize, Serialize};
-use tokio::io::AsyncReadExt;
 use menemen::request::{Request, RequestTypes};
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[cfg(feature = "async")]
+use tokio::io::AsyncReadExt;
+
+#[derive(Serialize, Deserialize, Debug)]
 struct Headers {
     pub host: String,
     #[serde(rename = "x-forwarded-proto")]
@@ -22,10 +24,10 @@ struct Headers {
     pub content_type: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Args {}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Root {
     pub args: Args,
     pub headers: Headers,
@@ -40,35 +42,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(not(feature = "json"))]
     let response_string = response.text().await?;
-    
+
     #[cfg(feature = "json")]
     let response_json = response.json::<Root>().await?;
 
     #[cfg(not(feature = "json"))]
-    println!("Response: ({:#?}): {}", response.response_info.status_code, response_string);
+    println!(
+        "Response: ({:#?}): {}",
+        response.response_info.status_code, response_string
+    );
     #[cfg(feature = "json")]
-    println!("Response: ({:#?}): {:?}", response.response_info.status_code, response_json);
+    println!(
+        "Response: ({:#?}): {:?}",
+        response.response_info.status_code, response_json
+    );
     Ok(())
 }
 
 #[cfg(not(feature = "async"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut request = Request::new("http://postman-echo.com/get", RequestTypes::POST).unwrap();
+    let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
 
     request.body("Hello, World!".into());
 
     let mut response = request.send()?;
-    
+
     #[cfg(not(feature = "json"))]
     let response_string = response.text()?;
-    
+
     #[cfg(feature = "json")]
     let response_json = response.json::<Root>()?;
 
     #[cfg(not(feature = "json"))]
-    println!("Response: ({:#?}): {}", response.response_info.status_code, response_string);
-    
+    println!(
+        "Response: ({:#?}): {}",
+        response.response_info.status_code, response_string
+    );
+
     #[cfg(feature = "json")]
-    println!("Response: ({:#?}): {:?}", response.response_info.status_code, response_json);
+    println!(
+        "Response: ({:#?}): {:?}",
+        response.response_info.status_code, response_json
+    );
     Ok(())
 }

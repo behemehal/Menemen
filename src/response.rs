@@ -28,7 +28,6 @@ impl ResponseInfo {
     /// ## Returns
     /// [`ResponseInfo`] if the answer was successfully parsed else [`anyhow::Error`]
     pub fn parse_response_info(response: &str) -> Result<ResponseInfo, anyhow::Error> {
-        println!("Response: {}", response);
         let mut response_info = ResponseInfo {
             http_version: String::new(),
             status_code: 0,
@@ -80,16 +79,15 @@ impl Response {
         self.stream.read_to_string(&mut string).await?;
         Ok(string)
     }
-    
+
     #[cfg(not(feature = "async"))]
     pub fn text(&mut self) -> Result<String, std::io::Error> {
         self.consumed = true;
         let mut string = String::new();
-        self.stream.read_to_string(&mut string);
+        self.stream.read_to_string(&mut string)?;
         Ok(string)
     }
-    
-    
+
     #[cfg(all(feature = "async", feature = "json"))]
     pub async fn json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, std::io::Error> {
         self.consumed = true;
@@ -97,7 +95,7 @@ impl Response {
         let json: T = serde_json::from_str(&string)?;
         Ok(json)
     }
-    
+
     #[cfg(all(not(feature = "async"), feature = "json"))]
     pub fn json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, std::io::Error> {
         self.consumed = true;

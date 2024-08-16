@@ -1,10 +1,11 @@
+#![cfg(feature = "async")]
+
 use menemen::request::{ContentTypes, Request, RequestTypes};
 use std::{
-    fs::File,
-    io::{self, Read, Write},
     panic,
     time::{Duration, Instant},
 };
+use tokio::fs;
 
 // Convert byte size to string
 fn byte_size_to_string(size: usize) -> String {
@@ -27,7 +28,10 @@ fn speed_to_string(speed_kbps: f64) -> String {
 }
 
 #[cfg(not(feature = "async"))]
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+panic!("This example requires async feature to be enabled");
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new(
         "http://ipv4.download.thinkbroadband.com/1GB.zip",
         RequestTypes::GET,
@@ -36,10 +40,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     request.set_header("Connection", "close");
     request.content_type = ContentTypes::OctetStream;
 
-    let mut response = request.send()?;
+    let response = request.send().await?;
 
-    let mut file = File::open("./20MB.zip")?;
-    let since_ms = Instant::now();
+    let mut file = fs::File("./20MB.zip").unwrap();
+    let mut since_ms = Instant::now();
     let mut last_instant = Instant::now();
     let mut collected_byte_len = 0;
     let mut stream_read_len = 0;
@@ -56,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut buffer = [0; 8192 * 2]; // Buffer of 8KB
     loop {
-        match response.stream.read(&mut buffer) {
+        match response.stream.read(&mut buffer).await {
             Ok(read_bytes) => {
                 if read_bytes == 0 {
                     break;
@@ -95,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                file.write_all(&buffer[..read_bytes])?;
+                file.write_all(&buffer[..read_bytes]).unwrap();
             }
             Err(e) => {
                 panic!("Error reading stream: {}", e);
@@ -103,5 +107,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
     }
     println!("\nDownload complete");
-    Ok(())
 }

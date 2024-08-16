@@ -12,13 +12,14 @@ use native_tls::TlsStream;
 #[cfg(all(feature = "https", feature = "async", feature = "https-async"))]
 use tokio_native_tls::TlsStream;
 
+#[cfg(feature = "async")]
+use std::task::{Context, Poll};
 
 #[cfg(not(feature = "async"))]
 use std::{
     io::{BufRead, Read, Write},
     net::TcpStream,
 };
-use std::task::{Context, Poll};
 #[cfg(feature = "async")]
 use tokio::net::TcpStream;
 

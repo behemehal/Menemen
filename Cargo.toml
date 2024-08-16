@@ -11,9 +11,8 @@ readme = "README.md"
 documentation = "https://docs.rs/menemen"
 repository = "https://github.com/behemehal/Menemen"
 
-#"async", "https", "https-async", "json"
 [features]
-default = []
+default = ["async", "https", "https-async", "json"]
 https = ["native-tls"]
 https-async = ["tokio-native-tls"]
 async = ["tokio"]
@@ -23,7 +22,11 @@ json = ["serde", "serde_json"]
 anyhow = "1.0.86"
 bufstream = { version = "0.1.4" }
 native-tls = { version = "0.2.12", optional = true }
-tokio = { version = "1.39.2", features = ["net", "io-util", "fs"], optional = true }
+tokio = { version = "1.39.2", features = [
+    "net",
+    "io-util",
+    "fs",
+], optional = true }
 tokio-native-tls = { version = "0.3.1", optional = true }
 serde = { version = "1.0.207", features = ["derive"], optional = true }
 serde_json = { version = "1.0.69", optional = true }
@@ -37,6 +40,11 @@ serde = { version = "1.0.207", features = ["derive"] }
 [[example]]
 name = "download_file"
 path = "examples/download_file.rs"
+
+[[example]]
+name = "download_file_async"
+path = "examples/download_file_async.rs"
+reqired-features = ["async"]
 
 [[example]]
 name = "echo"
@@ -53,3 +61,8 @@ path = "examples/post.rs"
 [[example]]
 name = "gzip"
 path = "examples/gzip.rs"
+
+[[example]]
+name = "json"
+path = "examples/json.rs"
+reqired-features = ["json"]
