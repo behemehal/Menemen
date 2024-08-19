@@ -12,11 +12,12 @@ documentation = "https://docs.rs/menemen"
 repository = "https://github.com/behemehal/Menemen"
 
 [features]
-default = ["async", "https", "https-async", "json"]
+default = ["async", "json"]
 https = ["native-tls"]
 https-async = ["tokio-native-tls"]
-async = ["tokio"]
 json = ["serde", "serde_json"]
+async = ["tokio"]
+blocking = []
 
 [dependencies]
 anyhow = "1.0.86"

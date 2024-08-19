@@ -5,7 +5,10 @@ use std::{
     panic,
     time::{Duration, Instant},
 };
-use tokio::fs;
+use tokio::{
+    fs,
+    io::{stdout, AsyncReadExt, AsyncWriteExt}, time::{sleep, sleep_until},
+};
 
 // Convert byte size to string
 fn byte_size_to_string(size: usize) -> String {
@@ -40,14 +43,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     request.set_header("Connection", "close");
     request.content_type = ContentTypes::OctetStream;
 
-    let response = request.send().await?;
+    let mut response = request.send().await?;
 
-    let mut file = fs::File("./20MB.zip").unwrap();
-    let mut since_ms = Instant::now();
+    let mut file = fs::File::create("./20MB.zip").await?;
+    let since_ms = Instant::now();
     let mut last_instant = Instant::now();
     let mut collected_byte_len = 0;
     let mut stream_read_len = 0;
-    let stdout = io::stdout();
+    let mut stdout = stdout();
 
     let content_len = match response
         .headers
@@ -94,12 +97,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             speed_to_string(speed_kbps),
                             since_ms.elapsed().as_secs(),
                         );
-                        stdout.lock().write_all(output.as_bytes()).unwrap();
-                        stdout.lock().flush().unwrap();
+                        stdout.write_all(output.as_bytes()).await?;
+                        stdout.flush().await?;
                     }
                 }
 
-                file.write_all(&buffer[..read_bytes]).unwrap();
+                file.write_all(&buffer[..read_bytes]).await?;
             }
             Err(e) => {
                 panic!("Error reading stream: {}", e);
@@ -107,4 +110,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
     }
     println!("\nDownload complete");
+    Ok(())
 }

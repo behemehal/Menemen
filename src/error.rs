@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::Debug;
 
-#[cfg(all(not(feature = "async"), feature = "https"))]
+#[cfg(not(feature = "async"))]
 use std::net::TcpStream;
 
 #[cfg(all(feature = "https", not(feature = "async")))]
@@ -24,6 +24,8 @@ pub enum RequestError {
     ConnectionError(String),
     /// TLS feature is not enabled
     TlsNotEnabled,
+    /// File error, provided path string does not exist
+    FileError(String),
 }
 
 // Implement `fmt::Display` for `RequestError`
@@ -38,7 +40,10 @@ impl fmt::Display for RequestError {
             RequestError::MalformedUrl => write!(f, "Given URL is malformed"),
             RequestError::AlreadySent => write!(f, "Request already sent"),
             RequestError::ConnectionError(err) => write!(f, "Connection error: {}", err),
-            RequestError::TlsNotEnabled => write!(f, "TLS feature is not enabled, enable it to use HTTPS"),
+            RequestError::TlsNotEnabled => {
+                write!(f, "TLS feature is not enabled, enable it to use HTTPS")
+            }
+            RequestError::FileError(err) => write!(f, "File error: {}", err),
         }
     }
 }
@@ -52,20 +57,20 @@ impl From<std::io::Error> for RequestError {
     }
 }
 
-#[cfg(all(feature = "https", not(feature = "async")))]
-impl From<native_tls::HandshakeError<TcpStream>> for RequestError {
-    fn from(error: native_tls::HandshakeError<TcpStream>) -> Self {
-        RequestError::ConnectionError(error.to_string())
-    }
-}
-
 impl From<anyhow::Error> for RequestError {
     fn from(error: anyhow::Error) -> Self {
         RequestError::ConnectionError(error.to_string())
     }
 }
 
-#[cfg(feature = "https-async")]
+#[cfg(feature = "https")]
+impl From<native_tls::HandshakeError<TcpStream>> for RequestError {
+    fn from(error: native_tls::HandshakeError<TcpStream>) -> Self {
+        RequestError::ConnectionError(error.to_string())
+    }
+}
+
+#[cfg(feature = "https")]
 impl From<native_tls::Error> for RequestError {
     fn from(error: native_tls::Error) -> Self {
         RequestError::ConnectionError(error.to_string())

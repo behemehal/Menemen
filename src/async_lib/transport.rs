@@ -1,60 +1,25 @@
-#[cfg(not(feature = "async"))]
-use bufstream::BufStream;
-
-#[cfg(feature = "async")]
 use std::pin::Pin;
-#[cfg(feature = "async")]
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncWrite, BufStream};
 
-#[cfg(all(feature = "https", not(feature = "async")))]
+#[cfg(feature = "https")]
 use native_tls::TlsStream;
 
-#[cfg(all(feature = "https", feature = "async", feature = "https-async"))]
+#[cfg(feature = "https")]
 use tokio_native_tls::TlsStream;
 
-#[cfg(feature = "async")]
 use std::task::{Context, Poll};
 
-#[cfg(not(feature = "async"))]
-use std::{
-    io::{BufRead, Read, Write},
-    net::TcpStream,
-};
-#[cfg(feature = "async")]
 use tokio::net::TcpStream;
 
 /// This enum is a bridge for the different types of streams that can be used to communicate with the server.
 #[allow(missing_debug_implementations)]
 pub enum Transport {
-    #[cfg(all(feature = "https", not(feature = "async")))]
-    /// Blocking Ssl stream
-    Ssl(BufStream<TlsStream<TcpStream>>),
-    #[cfg(all(feature = "https", feature = "async", feature = "https-async"))]
+    #[cfg(feature = "https")]
     Ssl(BufStream<TlsStream<TcpStream>>),
     /// Tcp stream
     Tcp(BufStream<TcpStream>),
 }
 
-#[cfg(not(feature = "async"))]
-impl Write for Transport {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        match self {
-            #[cfg(feature = "https")]
-            Transport::Ssl(socket) => socket.write(buf),
-            Transport::Tcp(socket) => socket.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        match self {
-            #[cfg(feature = "https")]
-            Transport::Ssl(socket) => socket.flush(),
-            Transport::Tcp(socket) => socket.flush(),
-        }
-    }
-}
-
-#[cfg(feature = "async")]
 impl AsyncWrite for Transport {
     fn poll_write(
         mut self: Pin<&mut Self>,
@@ -89,26 +54,13 @@ impl AsyncWrite for Transport {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), std::io::Error>> {
         match &mut *self {
-            #[cfg(all(feature = "https", feature = "async", feature = "https-async"))]
+            #[cfg(feature = "https")]
             Transport::Ssl(stream) => Pin::new(stream).poll_shutdown(cx),
-
             Transport::Tcp(stream) => Pin::new(stream).poll_shutdown(cx),
         }
     }
 }
 
-#[cfg(not(feature = "async"))]
-impl Read for Transport {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self {
-            #[cfg(feature = "https")]
-            Transport::Ssl(socket) => socket.read(buf),
-            Transport::Tcp(socket) => socket.read(buf),
-        }
-    }
-}
-
-#[cfg(feature = "async")]
 impl AsyncRead for Transport {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -123,7 +75,6 @@ impl AsyncRead for Transport {
     }
 }
 
-#[cfg(feature = "async")]
 impl AsyncBufRead for Transport {
     fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<&[u8]>> {
         match self.get_mut() {
@@ -138,25 +89,6 @@ impl AsyncBufRead for Transport {
             #[cfg(feature = "https")]
             Transport::Ssl(stream) => Pin::new(stream).consume(amt),
             Transport::Tcp(socket) => Pin::new(socket).consume(amt),
-        }
-    }
-}
-
-#[cfg(not(feature = "async"))]
-impl BufRead for Transport {
-    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
-        match self {
-            #[cfg(feature = "https")]
-            Transport::Ssl(socket) => socket.fill_buf(),
-            Transport::Tcp(socket) => socket.fill_buf(),
-        }
-    }
-
-    fn consume(&mut self, amt: usize) {
-        match self {
-            #[cfg(feature = "https")]
-            Transport::Ssl(socket) => socket.consume(amt),
-            Transport::Tcp(socket) => socket.consume(amt),
         }
     }
 }

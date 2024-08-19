@@ -1,30 +1,21 @@
-use std::io::Cursor;
-
-#[cfg(not(feature = "async"))]
 use std::{
     fs::File,
     io::{Read, Write},
 };
 
-#[cfg(feature = "async")]
-use std::pin::Pin;
-#[cfg(feature = "async")]
-use tokio::{fs::File as TokioFile, io::AsyncRead};
+use std::io::Cursor;
+
+use crate::{
+    form_data::{self, FormData},
+    multipart_form_data::MultipartFormData,
+};
 
 pub struct Body {
-    body: BodyType,
+    pub body: BodyType,
 }
 
 impl Body {
-    #[cfg(not(feature = "async"))]
     pub fn from_reader<R: Read + 'static>(reader: R) -> Body {
-        Body {
-            body: BodyType::Reader(Box::new(reader)),
-        }
-    }
-
-    #[cfg(feature = "async")]
-    pub fn from_reader<R: AsyncRead + Unpin + 'static>(reader: R) -> Body {
         Body {
             body: BodyType::Reader(Box::new(reader)),
         }
@@ -32,14 +23,25 @@ impl Body {
 
     pub fn from_bytes(bytes: Vec<u8>) -> Body {
         Body {
-            body: BodyType::Bytes(bytes),
+            body: BodyType::Bytes(Cursor::new(bytes)),
         }
     }
 
     pub fn size_hint(&self) -> Option<usize> {
         match &self.body {
             BodyType::Reader(_) => None,
-            BodyType::Bytes(bytes) => Some(bytes.len()),
+            BodyType::Bytes(cursor) => Some(cursor.get_ref().len()),
+            BodyType::MultipartFormData(_) => None,
+            BodyType::FormData(form_data) => Some(form_data.build().into_bytes().len()),
+        }
+    }
+
+    pub fn content_type(&self) -> Option<String> {
+        match &self.body {
+            BodyType::Reader(_) => None,
+            BodyType::Bytes(_) => None,
+            BodyType::MultipartFormData(_) => Some("multipart/form-data".to_string()),
+            BodyType::FormData(_) => Some("application/x-www-form-urlencoded".to_string()),
         }
     }
 }
@@ -49,78 +51,66 @@ impl std::fmt::Debug for Body {
         match &self.body {
             BodyType::Reader(_) => write!(f, "BodyType::Reader"),
             BodyType::Bytes(bytes) => write!(f, "BodyType::Bytes({:?})", bytes),
+            BodyType::MultipartFormData(_) => write!(f, "BodyType::MultipartFormData"),
+            BodyType::FormData(_) => write!(f, "BodyType::FormData"),
         }
     }
 }
 
 pub enum BodyType {
-    #[cfg(feature = "async")]
-    Reader(Box<dyn AsyncRead + Unpin>),
-    #[cfg(not(feature = "async"))]
     Reader(Box<dyn Read>),
-    Bytes(Vec<u8>),
+    Bytes(Cursor<Vec<u8>>),
+    FormData(FormData),
+    MultipartFormData(MultipartFormData),
 }
 
-#[cfg(not(feature = "async"))]
 impl Read for Body {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.body.read(buf)
     }
 }
 
-#[cfg(not(feature = "async"))]
 impl Read for BodyType {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             BodyType::Reader(reader) => reader.read(buf),
-            BodyType::Bytes(bytes) => Cursor::new(bytes).read(buf),
-        }
-    }
-}
+            BodyType::Bytes(cursor) => {
+                println!("Reading from cursor: {:#?}", cursor);
 
-#[cfg(feature = "async")]
-impl AsyncRead for Body {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        let mut pinned = Pin::new(&mut self.get_mut().body);
-        pinned.as_mut().poll_read(cx, buf)
-    }
-}
+                cursor.read(buf)
+            }
+            BodyType::FormData(form_data) => {
+                let form_data_string = form_data.build();
+                println!("form_data_string: {:#?}", form_data_string);
 
-#[cfg(feature = "async")]
-impl AsyncRead for BodyType {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        match self.get_mut() {
-            BodyType::Reader(reader) => Pin::new(reader).poll_read(cx, buf),
-            BodyType::Bytes(bytes) => {
+                let mut bytes = form_data_string.into_bytes();
+                bytes.extend(b"\n");
+
+                println!("bytes: {:#?}", bytes);
+
                 let mut cursor = Cursor::new(bytes);
-                let mut pinned = Pin::new(&mut cursor);
-                pinned.as_mut().poll_read(cx, buf)
+                cursor.read(buf)
+            }
+            BodyType::MultipartFormData(_) => {
+                unimplemented!()
             }
         }
     }
 }
 //
 
-#[cfg(not(feature = "async"))]
 impl Write for Body {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        unimplemented!();
         self.body.write(buf)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
+        unimplemented!();
         Ok(())
     }
 }
 
-#[cfg(not(feature = "async"))]
 impl Write for BodyType {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
@@ -129,9 +119,17 @@ impl Write for BodyType {
                 "Cannot write to a reader",
             )),
             BodyType::Bytes(bytes) => {
-                bytes.extend_from_slice(buf);
+                unimplemented!();
+                //bytes.extend_from_slice(buf);
+                //Ok(buf.len())
+            }
+            BodyType::FormData(form_data) => {
+                unimplemented!();
+                //let mut bytes = form_data.build().into_bytes();
+                //bytes.extend_from_slice(buf);
                 Ok(buf.len())
             }
+            BodyType::MultipartFormData(_) => todo!(),
         }
     }
 
@@ -178,16 +176,26 @@ impl From<&'static str> for Body {
     }
 }
 
-#[cfg(not(feature = "async"))]
 impl From<File> for Body {
     fn from(file: File) -> Body {
         Body::from_reader(file)
     }
 }
 
-#[cfg(feature = "async")]
-impl From<TokioFile> for Body {
-    fn from(file: TokioFile) -> Body {
-        Body::from_reader(file)
+impl From<FormData> for Body {
+    fn from(value: FormData) -> Self {
+        let built_form_data = value.build();
+        let cursor = Cursor::new(built_form_data.into_bytes());
+        Body {
+            body: BodyType::Bytes(cursor),
+        }
+    }
+}
+
+impl From<MultipartFormData> for Body {
+    fn from(value: MultipartFormData) -> Self {
+        Body {
+            body: BodyType::MultipartFormData(value),
+        }
     }
 }

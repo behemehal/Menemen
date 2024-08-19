@@ -71,6 +71,8 @@ impl Client {
     /// [`anyhow::Result`] with [`Response`] if the request was successful else [`anyhow::Error`]
     #[cfg(not(feature = "async"))]
     pub fn send_request(&self, tls: bool, request: &mut Request) -> Result<Response, RequestError> {
+        use std::io::Read;
+
         let stream = self.connect()?;
 
         let mut stream = if tls {
@@ -95,10 +97,32 @@ impl Client {
             }
         }
 
-        stream.write_all(request.build_request_body().as_bytes())?;
+        let built_request = request.build_request_body();
+
+        println!("built_request: \n{}", built_request);
+
+        stream.write_all(built_request.as_bytes())?;
 
         if let Some(ref mut body_to_send) = &mut request.body_to_send {
-            copy(body_to_send, &mut stream)?;
+            let fd = match &body_to_send.body {
+                crate::body::BodyType::FormData(fd) => fd.build(),
+                _ => panic!("Not implemented"),
+            };
+
+            let mut string_buff = String::new();
+
+
+
+
+            println!("fd: {:#?}", fd);
+
+            body_to_send.read_to_string(
+                &mut string_buff
+            );
+
+            println!("string_buff: {:#?}", string_buff);
+            //copy(body_to_send, &mut stream)?;
+            stream.write_all(b"key=value")?;
         }
         stream.flush()?;
 
@@ -145,6 +169,8 @@ impl Client {
         tls: bool,
         request: &mut Request,
     ) -> Result<Response, RequestError> {
+        use crate::body;
+
         let stream = self.connect().await?;
 
         let mut stream = if tls {
@@ -169,15 +195,30 @@ impl Client {
             if let Some(size_hint) = body_to_send.size_hint() {
                 request.set_header("Content-Length", &size_hint.to_string());
             }
+
+           /*  if let Some(content_type) = body_to_send.content_type() {
+                request.set_header("Content-Type", &content_type);
+            } */
         }
 
-        stream
-            .write_all(request.build_request_body().as_bytes())
-            .await?;
+        let built_request = request.build_request_body();
+
+        println!("built_request: {}", built_request);
+
+        stream.write_all(built_request.as_bytes()).await?;
+
+        println!("Request sent, writing body");
 
         if let Some(ref mut body_to_send) = &mut request.body_to_send {
             tokio::io::copy(body_to_send, &mut stream).await?;
+            /* stream
+                .write_all(
+                    b"username=johndoe&password=securepassword123&email=johndoe%40example.com",
+                )
+                .await?; */
         }
+
+        println!("Body written, flushing");
         stream.flush().await?;
 
         let mut lines = vec![String::new()];

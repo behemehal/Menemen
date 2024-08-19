@@ -1,10 +1,4 @@
-use crate::{
-    body::Body,
-    client::Client,
-    error::RequestError,
-    response::Response,
-    url::Url,
-};
+use crate::{body::Body, client::Client, error::RequestError, response::Response, url::Url};
 use anyhow::Context;
 
 /// HTTP Header
@@ -89,6 +83,10 @@ pub enum ContentTypes {
     Any,
     /// application/octet-stream
     OctetStream,
+    /// Form-Data
+    FormData,
+    /// Multipart-Form-Data
+    MultipartFormData,
 }
 
 impl Default for ContentTypes {
@@ -114,6 +112,8 @@ impl ContentTypes {
             ContentTypes::MP3 => "audio/mp3",
             ContentTypes::Any => "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             ContentTypes::OctetStream => "application/octet-stream",
+            ContentTypes::FormData => "application/x-www-form-urlencoded",
+            ContentTypes::MultipartFormData => "multipart/form-data",
         }
     }
 }

@@ -37,31 +37,58 @@ struct Root {
 #[cfg(feature = "async")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
+    use menemen::{form_data::FormData, multipart_form::MultipartFormData};
+
+    //let form_data: FormData = vec![("key", "value")].into();
+
+    let mut form_data = MultipartFormData::new();
+
+    form_data.add_string("key", "value".into());
+    form_data.add_file("file", "./Cargo.toml").await?;
+
+    //.add_string("key", "value".into())
+    //.add_file("file", "./Cargo.toml")
+    //.await?;
+
+    let mut request = Request::new("http://postman-echo.com/post", RequestTypes::POST)?;
+    request.content_type = menemen::request::ContentTypes::FormData;
+
+    request.append_body(form_data.into());
+
     let mut response = request.send().await?;
+    println!("Response: {:#?}", response.response_info);
 
-    //let response_string = response.text().await?;
-    let response_json = response.json::<Root>().await?;
+    let response_string = response.text().await?;
+    //let response_json = response.json::<Root>().await?;
 
-    //println!("Response: ({:#?}): {}", response.response_info.status_code, response_string);
+    println!(
+        "Response: ({:#?}): {}",
+        response.response_info.status_code, response_string
+    );
     //println!("Response: ({:#?}): {:?}", response.response_info.status_code, response_json);
     Ok(())
 }
 
 #[cfg(not(feature = "async"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
+    let mut request = Request::new("http://postman-echo.com/post", RequestTypes::POST).unwrap();
+    /*
+    let form_data: FormData = vec![("key", "value")].into();
+    request.content_type = menemen::request::ContentTypes::FormData;
+
+    request.append_body(form_data.into()); */
+
     let mut response = request.send()?;
 
     println!("Response: {:#?}", response.response_info);
 
     //let response_string = response.text()?;
-    #[cfg(feature = "json")]
-    let response = response.json::<Root>()?;
+    //#[cfg(feature = "json")]
+    //let response = response.json::<Root>()?;
 
-    #[cfg(not(feature = "json"))]
+    //#[cfg(not(feature = "json"))]
     let response = response.text()?;
 
-    println!("Response: {:#?}", response);
+    println!("Response: {}", response);
     Ok(())
 }

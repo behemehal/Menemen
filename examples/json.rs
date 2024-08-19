@@ -1,9 +1,6 @@
 use menemen::request::{Request, RequestTypes};
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "async")]
-use tokio::io::AsyncReadExt;
-
 #[derive(Serialize, Deserialize, Debug)]
 struct Headers {
     pub host: String,
