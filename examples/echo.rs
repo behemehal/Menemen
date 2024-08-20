@@ -38,20 +38,23 @@ struct Root {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use menemen::{form_data::FormData, multipart_form::MultipartFormData};
+    use tokio::fs::File;
 
     //let form_data: FormData = vec![("key", "value")].into();
 
     let mut form_data = MultipartFormData::new();
 
+    let file = File::open("./test.json").await?;
+
     form_data.add_string("key", "value".into());
-    form_data.add_file("file", "./Cargo.toml").await?;
+    //form_data.add_file("file", "./test.json").await?;
+    //form_data.add_stream("strm", Box::new(file));
 
     //.add_string("key", "value".into())
     //.add_file("file", "./Cargo.toml")
     //.await?;
 
-    let mut request = Request::new("http://postman-echo.com/post", RequestTypes::POST)?;
-    request.content_type = menemen::request::ContentTypes::FormData;
+    let mut request = Request::new("http://echo.free.beeceptor.com/test?123=j", RequestTypes::POST)?;
 
     request.append_body(form_data.into());
 

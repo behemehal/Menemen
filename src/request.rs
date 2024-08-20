@@ -184,7 +184,10 @@ impl Request {
 
     /// Builds the request body
     pub(crate) fn build_request_body(&mut self) -> String {
-        self.set_header("Content-Type", &self.content_type.clone().get_type());
+        if self.get_header("Content-Type").is_none() {
+            self.set_header("Content-Type", &self.content_type.clone().get_type());
+        }
+
         //{protocol}://{host}{port}
         format!(
             "{request_type} /{path}{queryParams} HTTP/1.1\r\n\

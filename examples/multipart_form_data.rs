@@ -1,12 +1,14 @@
-use menemen::multipart_form_data::MultipartFormData;
-
 #[cfg(feature = "async")]
-use tokio::{fs::File, io::AsyncRead};
+use tokio::{fs::File, io::AsyncRead, time::sleep};
+
+use std::time::Duration;
 
 #[cfg(not(feature = "async"))]
 use std::{fs::File, io::Read};
 
 use std::any::Any;
+
+use menemen::multipart_form::MultipartFormData;
 
 #[cfg(not(feature = "async"))]
 fn main() {
@@ -20,64 +22,59 @@ fn main() {
 
     let mut body: Body = form_data_builder.into();
 
-    println!("Body built, waiting for 25 seconds copy everything to array: {:?}", body.size_hint());
+    println!(
+        "Body built, waiting for 25 seconds copy everything to array: {:?}",
+        body.size_hint()
+    );
 
-    let mut buffer : Vec<u8> = Vec::new();
+    let mut buffer: Vec<u8> = Vec::new();
 
     println!("Buffer: {:?}", buffer);
 
-    
     let buff: Vec<u8> = Vec::new();
     let mut cursor = io::Cursor::new(buff);
 
     io::copy(&mut body, &mut cursor).unwrap();
 
-
     println!("read_to_end: {:?}", cursor.get_ref());
-
 }
 
 #[cfg(feature = "async")]
 #[tokio::main]
-async fn main() {
-    use std::thread::sleep;
-
-    use menemen::{body::Body, form_data::FormData};
-    use tokio::io::AsyncReadExt;
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use menemen::body::Body;
 
     let mut form_data_builder = MultipartFormData::new();
 
-    println!("Sleeping for 15 seconds take your time");
+    //form_data_builder.add_file("key1", "./20MB.zip").await?;
 
-    sleep(std::time::Duration::from_secs(15));
-
-    let file = File::open("./20MB.zip").await.unwrap();
-    form_data_builder.add("key1", file);
+    form_data_builder.add_string("key2", "value2".into());
 
     println!(
-        "First file oppened, Check the io and memory usage of the program, sleep for 15 seconds"
+        "First file oppened, Check the io and memory usage of the program, sleep for 5 seconds"
     );
 
-    sleep(std::time::Duration::from_secs(15));
-
-    let second_file = File::open("./1GB.zip").await.unwrap();
-    form_data_builder.add("key2", second_file);
-
-    println!("Second File added waiting 15secs until body is built");
-
-    sleep(std::time::Duration::from_secs(15));
 
     let mut body: Body = form_data_builder.into();
 
     println!("Body built, waiting for 25 seconds copy everything to array");
 
-    sleep(std::time::Duration::from_secs(25));
+    //let mut buffer = Vec::new();
 
-    let mut buffer = Vec::new();
+    match body.body {
+        menemen::body::BodyType::Reader(_) => todo!(),
+        menemen::body::BodyType::Bytes(_) => todo!(),
+        menemen::body::BodyType::FormData(_) => todo!(),
+        menemen::body::BodyType::MultipartFormData(mut multipart) => {
+            let built = multipart.build().await?;
 
-    body.read_to_end(&mut buffer).await.unwrap();
+            let buf_str = String::from_utf8(built).unwrap();
+
+            println!("Built: \n{}", buf_str);
+        }
+    }
 
     loop {
-        sleep(std::time::Duration::from_secs(1));
+        sleep(Duration::from_secs(1));
     }
 }

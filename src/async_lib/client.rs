@@ -1,9 +1,11 @@
 use crate::{
-    error::RequestError, request::Request, response::Response, transport::Transport, url::Url,
+    body::BodyType,
+    error::RequestError,
+    request::{ContentTypes, Header, Request},
+    response::{Response, ResponseInfo},
+    transport::Transport,
+    url::Url,
 };
-
-use crate::request::Header;
-use crate::response::ResponseInfo;
 use tokio::io::AsyncWriteExt;
 use tokio::{
     io::{AsyncReadExt, BufStream},
@@ -77,20 +79,31 @@ impl Client {
 
         let mut read_body = None;
 
-        if let Some(ref mut body_to_send) = &mut request.body_to_send {
+        if let BodyType::MultipartFormData(multipart_form) =
+            &request.body_to_send.as_ref().unwrap().body
+        {
+            request.set_header(
+                "Content-Type",
+                &format!("multipart/form-data; boundary={}", multipart_form.boundary),
+            );
+        }
+
+        if let Some(body_to_send) = &mut request.body_to_send {
             let mut read_vec = Vec::new();
             match &mut body_to_send.body {
-                crate::body::BodyType::Reader(reader) => {
+                BodyType::Reader(reader) => {
                     reader.read_to_end(&mut read_vec).await?;
                 }
-                crate::body::BodyType::Bytes(bytes) => {
+                BodyType::Bytes(bytes) => {
                     read_vec = bytes.get_ref().to_vec();
                 }
-                crate::body::BodyType::FormData(form_data) => {
+                BodyType::FormData(form_data) => {
+                    request.content_type = ContentTypes::FormData;
                     let built_form = form_data.build();
                     read_vec = built_form.into_bytes();
                 }
-                crate::body::BodyType::MultipartFormData(multipart_form) => {
+                #[cfg(feature = "multipart")]
+                BodyType::MultipartFormData(multipart_form) => {
                     read_vec = multipart_form.build().await?;
                 }
             }
@@ -99,17 +112,27 @@ impl Client {
             read_body = Some(read_vec);
         }
 
+        let mut buff = Vec::new();
+
         let built_request = request.build_request_body();
 
-        println!("built_request: {}", built_request);
+        println!("Request built: \n{}", built_request);
 
-        stream.write_all(built_request.as_bytes()).await?;
+        buff.extend_from_slice(built_request.as_bytes());
+        //stream.write_all(built_request.as_bytes()).await?;
 
         println!("Request sent, writing body");
 
         if let Some(read_body) = read_body {
-            stream.write_all(&read_body).await?;
+            //stream.write_all(&read_body).await?;
+            println!("Read body length: {:?}", read_body.len());
+            buff.extend_from_slice(&read_body);
         }
+
+        let string_from_buff = String::from_utf8(buff.clone()).unwrap();
+        println!("\n\nString from buff: \n---\n{}\n---\n", string_from_buff);
+
+        stream.write_all(&buff).await?;
 
         println!("Body written, flushing");
         stream.flush().await?;

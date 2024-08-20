@@ -73,6 +73,7 @@ cfg_imports! {
     /// This module is abstracts the transport layer (ssl | tcp)
     pub use async_lib::transport;
     /// Http Multipart form utilities
+    #[cfg(feature = "multipart")]
     pub use async_lib::multipart_form;
 }
 
@@ -86,5 +87,6 @@ cfg_imports! {
     /// This module is abstracts the transport layer (ssl | tcp)
     pub use blocking::transport;
     /// Http Multipart form utilities
+    #[cfg(feature = "multipart")]
     pub use blocking::multipart_form;
 }
