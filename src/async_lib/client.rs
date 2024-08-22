@@ -79,13 +79,13 @@ impl Client {
 
         let mut read_body = None;
 
-        if let BodyType::MultipartFormData(multipart_form) =
-            &request.body_to_send.as_ref().unwrap().body
-        {
-            request.set_header(
-                "Content-Type",
-                &format!("multipart/form-data; boundary={}", multipart_form.boundary),
-            );
+        if let Some(body_to_send) = &request.body_to_send {
+            if let BodyType::MultipartFormData(multipart_form) = &body_to_send.body {
+                request.set_header(
+                    "Content-Type",
+                    &format!("multipart/form-data; boundary={}", multipart_form.boundary),
+                );
+            }
         }
 
         if let Some(body_to_send) = &mut request.body_to_send {
@@ -112,35 +112,21 @@ impl Client {
             read_body = Some(read_vec);
         }
 
-        let mut buff = Vec::new();
-
         let built_request = request.build_request_body();
-
-        println!("Request built: \n{}", built_request);
-
-        buff.extend_from_slice(built_request.as_bytes());
-        //stream.write_all(built_request.as_bytes()).await?;
-
-        println!("Request sent, writing body");
+        stream.write_all(built_request.as_bytes()).await?;
 
         if let Some(read_body) = read_body {
-            //stream.write_all(&read_body).await?;
-            println!("Read body length: {:?}", read_body.len());
-            buff.extend_from_slice(&read_body);
+            stream.write_all(&read_body).await?;
         }
 
-        let string_from_buff = String::from_utf8(buff.clone()).unwrap();
-        println!("\n\nString from buff: \n---\n{}\n---\n", string_from_buff);
-
-        stream.write_all(&buff).await?;
-
-        println!("Body written, flushing");
         stream.flush().await?;
 
         let mut lines = vec![String::new()];
         loop {
             let last_line = lines.last_mut().unwrap();
             let read_byte = stream.read_line(last_line).await?;
+
+            println!("LastLine: {:?}", last_line);
 
             if last_line == "\r\n" {
                 let response_info =
@@ -150,6 +136,8 @@ impl Client {
                     .iter()
                     .map(|x| Header::parse(&x.replace("\r\n", "")))
                     .collect::<Result<Vec<Header>, anyhow::Error>>()?;
+                let is_request_chunked = headers.iter().any(|x| x.name == "Transfer-Encoding" && x.value == "chunked");
+            
                 return Ok(Response {
                     response_info,
                     headers,

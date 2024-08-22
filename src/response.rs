@@ -5,7 +5,7 @@ use crate::transport::Transport;
 use anyhow::Context;
 
 #[cfg(feature = "async")]
-use tokio::io::AsyncReadExt;
+use tokio::io::AsyncBufReadExt;
 
 #[cfg(not(feature = "async"))]
 use std::io::Read;
@@ -75,8 +75,9 @@ impl Response {
     #[cfg(feature = "async")]
     pub async fn text(&mut self) -> Result<String, std::io::Error> {
         self.consumed = true;
-        let mut string = String::new();
-        self.stream.read_to_string(&mut string).await?;
+        let mut string_buff = Vec::new();
+        self.stream.read_until(b'\0', &mut string_buff).await?;
+        let string = String::from_utf8_lossy(&string_buff).to_string();
         Ok(string)
     }
 

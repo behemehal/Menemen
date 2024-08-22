@@ -33,7 +33,7 @@ impl MultipartFormData {
             .collect();
         MultipartFormData {
             form_data: Vec::new(),
-            boundary: format!("------{}", "WebKitFormBoundaryXxXxXxXxXx"),
+            boundary: format!("----{}", "WebKitFormBoundaryXxXxXxXxXx"),
         }
     }
 
@@ -95,7 +95,7 @@ impl MultipartFormData {
         let mut byte_buffer = Vec::new();
 
         for (name, data) in self.form_data.iter_mut() {
-            byte_buffer.extend_from_slice(format!("{}", self.boundary).as_bytes());
+            byte_buffer.extend_from_slice(format!("--{}", self.boundary).as_bytes());
 
             let mut buffer = Vec::new();
 
@@ -113,7 +113,7 @@ impl MultipartFormData {
                 MultipartFormValue::Text(text) => {
                     byte_buffer.extend_from_slice(
                         format!(
-                            "\r\nContent-Disposition: form-data; name=\"{}\";\r\n\r\n",
+                            "\r\nContent-Disposition: form-data; name=\"{}\"\r\n\r\n",
                             name
                         )
                         .as_bytes(),
@@ -138,7 +138,7 @@ impl MultipartFormData {
             byte_buffer.extend_from_slice(b"\r\n");
         }
 
-        byte_buffer.extend_from_slice(format!("{}--\r\n", self.boundary).as_bytes());
+        byte_buffer.extend_from_slice(format!("--{}--\r\n", self.boundary).as_bytes());
         Ok(byte_buffer)
     }
 }
