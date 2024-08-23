@@ -45,31 +45,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     //let form_data: FormData = vec![("key", "value")].into();
 
-    //let mut form_data = MultipartFormData::new();
+    let mut form_data = MultipartFormData::new();
 
-    let file = File::open("./test.json").await?;
+    let file = File::open("./target/debug/libmenemen.d").await?;
 
-    //form_data.add_string("key", "value".into());
-    //form_data.add_file("file", "./test.json").await?;
+    form_data.add_string("key", "value".into());
+    form_data.add_file("file", "./target/debug/libmenemen.d").await?;
+    form_data.add_file("file", "./target/debug/libmenemen.d").await?;
     //form_data.add_stream("strm", Box::new(file));
     //form_data.add_file("file", "./Cargo.toml").await?;
     //form_data.add_file("allMightyZip", "./20MB.zip").await?;
 
     let mut request = Request::new(
-        "http://echo.free.beeceptor.com/test?123=j",
-        RequestTypes::POST,
+        "http://anglesharp.azurewebsites.net/Chunked",
+        RequestTypes::GET,
     )?;
 
-    //request.append_body(form_data.into());
+    request.append_body(form_data.into());
 
     let mut response = request.send().await?;
-    println!("Response: {:#?}", response.response_info);
+    println!("a Response: {:#?}", response.response_info);
 
     let response_string = response.text().await?;
     //let response_json = response.json::<HttpRequest>().await?;
 
     println!(
-        "Response: ({}): {}",
+        "Response: ({}): {:?}",
         response.response_info.status_code, response_string
     );
     //println!("Response: ({:#?}): {:?}", response.response_info.status_code, response_json);

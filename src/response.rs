@@ -1,11 +1,12 @@
 use std::fmt::Debug;
 
+use crate::error::RequestError;
 use crate::request;
 use crate::transport::Transport;
 use anyhow::Context;
 
 #[cfg(feature = "async")]
-use tokio::io::AsyncBufReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 #[cfg(not(feature = "async"))]
 use std::io::Read;
@@ -59,7 +60,8 @@ pub struct Response {
     /// Incoming body stream
     pub stream: Transport,
     /// Flag that indicates if the response is already consumed
-    pub consumed: bool,
+    pub(crate) consumed: bool,
+    pub(crate) request_chunked: bool,
 }
 
 impl Debug for Response {
@@ -72,25 +74,51 @@ impl Debug for Response {
 }
 
 impl Response {
+    //TODO: Implement AsyncRead instead
     #[cfg(feature = "async")]
-    pub async fn text(&mut self) -> Result<String, std::io::Error> {
+    async fn read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
         self.consumed = true;
-        let mut string_buff = Vec::new();
-        self.stream.read_until(b'\0', &mut string_buff).await?;
-        let string = String::from_utf8_lossy(&string_buff).to_string();
-        Ok(string)
+        if self.request_chunked {
+            let mut chunk_size = self.read_chunk_size(false).await?;
+            let mut read_data = Vec::new();
+
+            while chunk_size > 0 {
+                let mut read_chunk = vec![0; chunk_size];
+                let read_byte = self.stream.read_exact(&mut read_chunk).await?;
+
+                if read_byte == 0 {
+                    return Err(RequestError::ConnectionError(
+                        "Connection closed by server".to_string(),
+                    ));
+                }
+
+                chunk_size = self.read_chunk_size(true).await?;
+                read_data.extend(read_chunk);
+            }
+
+            Ok(read_data)
+        } else {
+            let mut read_data = Vec::new();
+            self.stream.read_to_end(&mut read_data).await?;
+            Ok(read_data)
+        }
+    }
+
+    #[cfg(feature = "async")]
+    pub async fn text(&mut self) -> Result<String, RequestError> {
+        let read_data = self.read_to_end().await?;
+        String::from_utf8(read_data).map_err(|e| RequestError::TextError(e.to_string()))
     }
 
     #[cfg(not(feature = "async"))]
     pub fn text(&mut self) -> Result<String, std::io::Error> {
-        self.consumed = true;
-        let mut string = String::new();
-        self.stream.read_to_string(&mut string)?;
-        Ok(string)
+        let read_data = self.read_to_end()?;
+        String::from_utf8(read_data)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
     #[cfg(all(feature = "async", feature = "json"))]
-    pub async fn json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, std::io::Error> {
+    pub async fn json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, RequestError> {
         self.consumed = true;
         let string = self.text().await?;
         let json: T = serde_json::from_str(&string)?;
@@ -103,5 +131,44 @@ impl Response {
         let string = self.text()?;
         let json: T = serde_json::from_str(&string)?;
         Ok(json)
+    }
+
+    #[cfg(feature = "async")]
+    async fn read_chunk_size(&mut self, double_read: bool) -> Result<usize, std::io::Error> {
+        let mut chunk_size_string = String::new();
+
+        // If double_read is true, read the first line to get the chunk size
+        if double_read {
+            let read_byte = self.stream.read_line(&mut String::new()).await?;
+            if read_byte == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionAborted,
+                    "Connection closed by server",
+                ));
+            }
+        }
+
+        let read_byte = self.stream.read_line(&mut chunk_size_string).await?;
+        if read_byte == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "Connection closed by server",
+            ));
+        }
+
+        Ok(usize::from_str_radix(&chunk_size_string.trim_end(), 16).unwrap())
+    }
+
+    #[cfg(not(feature = "async"))]
+    fn read_chunk_size(&mut self) -> Result<usize, std::io::Error> {
+        let mut chunk_size_string = String::new();
+        let read_byte = self.stream.read_line(&mut chunk_size_string)?;
+        if read_byte == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "Connection closed by server",
+            ));
+        }
+        Ok(usize::from_str_radix(&chunk_size_string.trim_end(), 16).unwrap())
     }
 }

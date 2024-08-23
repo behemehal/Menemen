@@ -7,6 +7,9 @@ use std::net::TcpStream;
 #[cfg(all(feature = "https", not(feature = "async")))]
 use native_tls;
 
+#[cfg(feature = "json")]
+use serde_json::Error as JsonError;
+
 /// List of request errors
 #[derive(Clone, Debug)]
 pub enum RequestError {
@@ -26,6 +29,10 @@ pub enum RequestError {
     TlsNotEnabled,
     /// File error, provided path string does not exist
     FileError(String),
+    /// Text error, response bytes could not be converted to string
+    TextError(String),
+    /// JSON error, received JSON could not be parsed
+    JsonError(String),
 }
 
 // Implement `fmt::Display` for `RequestError`
@@ -43,7 +50,8 @@ impl fmt::Display for RequestError {
             RequestError::TlsNotEnabled => {
                 write!(f, "TLS feature is not enabled, enable it to use HTTPS")
             }
-            RequestError::FileError(err) => write!(f, "File error: {}", err),
+            ,
+            e => write!(f, "{:?}", e),
         }
     }
 }
@@ -86,5 +94,11 @@ impl From<String> for RequestError {
 impl From<&str> for RequestError {
     fn from(error: &str) -> Self {
         RequestError::ConnectionError(error.to_string())
+    }
+}
+
+impl From<JsonError> for RequestError {
+    fn from(error: serde_json::Error) -> Self {
+        RequestError::JsonError(error.to_string())
     }
 }

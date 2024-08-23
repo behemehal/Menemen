@@ -126,23 +126,23 @@ impl Client {
             let last_line = lines.last_mut().unwrap();
             let read_byte = stream.read_line(last_line).await?;
 
-            println!("LastLine: {:?}", last_line);
-
             if last_line == "\r\n" {
-                let response_info =
-                    ResponseInfo::parse_response_info(&lines[0].replace("\r\n", ""))?;
-                let remaining_lines = lines[1..lines.len() - 2].to_vec();
+                let response_info = ResponseInfo::parse_response_info(&lines[0].trim_end())?;
+                let remaining_lines = lines[1..lines.len() - 1].to_vec();
                 let headers = remaining_lines
                     .iter()
-                    .map(|x| Header::parse(&x.replace("\r\n", "")))
+                    .map(|x| Header::parse(&x.trim_end()))
                     .collect::<Result<Vec<Header>, anyhow::Error>>()?;
-                let is_request_chunked = headers.iter().any(|x| x.name == "Transfer-Encoding" && x.value == "chunked");
-            
+                let request_chunked = headers
+                    .iter()
+                    .any(|x| x.name == "Transfer-Encoding" && x.value == "chunked");
+
                 return Ok(Response {
                     response_info,
                     headers,
                     stream,
                     consumed: true,
+                    request_chunked,
                 });
             }
 
