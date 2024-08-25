@@ -10,6 +10,9 @@ use crate::{
     multipart_form_data::MultipartFormData,
 };
 
+#[cfg(feature = "multipart")]
+use super::multipart_form::MultipartFormData;
+
 pub struct Body {
     pub body: BodyType,
 }

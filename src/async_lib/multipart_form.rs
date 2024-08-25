@@ -33,7 +33,7 @@ impl MultipartFormData {
             .collect();
         MultipartFormData {
             form_data: Vec::new(),
-            boundary: format!("----{}", "WebKitFormBoundaryXxXxXxXxXx"),
+            boundary: format!("----{}", boundary),
         }
     }
 

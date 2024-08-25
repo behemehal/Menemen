@@ -12,31 +12,32 @@ documentation = "https://docs.rs/menemen"
 repository = "https://github.com/behemehal/Menemen"
 
 [features]
-default = ["async", "json", "multipart"]
+default = ["async", "json", "multipart", "gzip"]
 https = ["native-tls"]
 https-async = ["tokio-native-tls"]
 json = ["serde", "serde_json"]
 async = ["tokio"]
 blocking = []
 multipart = ["rand", "mime_guess"]
+gzip = ["libflate"]
 
 [dependencies]
 anyhow = "1.0.86"
 bufstream = { version = "0.1.4" }
 native-tls = { version = "0.2.12", optional = true }
-tokio = { version = "1.39.2", features = [
+tokio = { version = "1.39.3", features = [
     "net",
     "io-util",
     "fs",
 ], optional = true }
 tokio-native-tls = { version = "0.3.1", optional = true }
 serde = { version = "1.0.208", features = ["derive"], optional = true }
-serde_json = { version = "1.0.125", optional = true }
+serde_json = { version = "1.0.127", optional = true }
 rand = { version = "0.8.5", optional = true }
 mime_guess = { version = "2.0.1", optional = true }
+libflate = { version = "2.1.0", optional = true }
 
 [dev-dependencies]
-libflate = "2.1.0"
 tokio = { version = "1.39.2", features = ["full"] }
 tokio-macros = "2.4.0"
 serde = { version = "1.0.207", features = ["derive"] }

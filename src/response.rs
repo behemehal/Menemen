@@ -11,6 +11,9 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 #[cfg(not(feature = "async"))]
 use std::io::Read;
 
+#[cfg(feature = "gzip")]
+use libflate::gzip::Decoder;
+
 /// ResponseInfo struct
 #[derive(Clone, Debug, Default)]
 pub struct ResponseInfo {
@@ -76,7 +79,7 @@ impl Debug for Response {
 impl Response {
     //TODO: Implement AsyncRead instead
     #[cfg(feature = "async")]
-    async fn read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
+    pub async fn read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
         self.consumed = true;
         if self.request_chunked {
             let mut chunk_size = self.read_chunk_size(false).await?;
@@ -106,8 +109,33 @@ impl Response {
 
     #[cfg(feature = "async")]
     pub async fn text(&mut self) -> Result<String, RequestError> {
-        let read_data = self.read_to_end().await?;
-        String::from_utf8(read_data).map_err(|e| RequestError::TextError(e.to_string()))
+        let content_encoding = self
+            .headers
+            .iter()
+            .find(|x| x.name == "Content-Encoding")
+            .map(|x| x.value.as_str());
+
+        if let Some("gzip") = content_encoding {
+            let read_data = self.read_to_end().await?;
+
+            let mut decoder = Decoder::new(&read_data[..])?;
+            let mut decoded_data = Vec::new();
+
+            tokio::task::spawn_blocking(move || {
+                use std::io::Read;
+
+                decoder
+                    .read_to_end(&mut decoded_data)
+                    .map_err(|e| RequestError::TextError(e.to_string()))
+            })
+            .await
+            .map_err(|e| RequestError::TextError(e.to_string()))??;
+
+            String::from_utf8(decoded_data).map_err(|e| RequestError::TextError(e.to_string()))
+        } else {
+            let read_data = self.read_to_end().await?;
+            String::from_utf8(read_data).map_err(|e| RequestError::TextError(e.to_string()))
+        }
     }
 
     #[cfg(not(feature = "async"))]
@@ -160,15 +188,28 @@ impl Response {
     }
 
     #[cfg(not(feature = "async"))]
-    fn read_chunk_size(&mut self) -> Result<usize, std::io::Error> {
+    fn read_chunk_size(&mut self, double_read: bool) -> Result<usize, std::io::Error> {
         let mut chunk_size_string = String::new();
-        let read_byte = self.stream.read_line(&mut chunk_size_string)?;
+
+        // If double_read is true, read the first line to get the chunk size
+        if double_read {
+            let read_byte = self.stream.read_line(&mut String::new());
+            if read_byte == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionAborted,
+                    "Connection closed by server",
+                ));
+            }
+        }
+
+        let read_byte = self.stream.read_line(&mut chunk_size_string);
         if read_byte == 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::ConnectionAborted,
                 "Connection closed by server",
             ));
         }
+
         Ok(usize::from_str_radix(&chunk_size_string.trim_end(), 16).unwrap())
     }
 }

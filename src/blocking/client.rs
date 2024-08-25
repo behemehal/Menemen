@@ -99,8 +99,6 @@ impl Client {
 
         let built_request = request.build_request_body();
 
-        println!("built_request: \n{}", built_request);
-
         stream.write_all(built_request.as_bytes())?;
 
         if let Some(ref mut body_to_send) = &mut request.body_to_send {
@@ -109,18 +107,6 @@ impl Client {
                 _ => panic!("Not implemented"),
             };
 
-            let mut string_buff = String::new();
-
-
-
-
-            println!("fd: {:#?}", fd);
-
-            body_to_send.read_to_string(
-                &mut string_buff
-            );
-
-            println!("string_buff: {:#?}", string_buff);
             //copy(body_to_send, &mut stream)?;
             stream.write_all(b"key=value")?;
         }
@@ -196,7 +182,7 @@ impl Client {
                 request.set_header("Content-Length", &size_hint.to_string());
             }
 
-           /*  if let Some(content_type) = body_to_send.content_type() {
+            /*  if let Some(content_type) = body_to_send.content_type() {
                 request.set_header("Content-Type", &content_type);
             } */
         }
@@ -212,10 +198,10 @@ impl Client {
         if let Some(ref mut body_to_send) = &mut request.body_to_send {
             tokio::io::copy(body_to_send, &mut stream).await?;
             /* stream
-                .write_all(
-                    b"username=johndoe&password=securepassword123&email=johndoe%40example.com",
-                )
-                .await?; */
+            .write_all(
+                b"username=johndoe&password=securepassword123&email=johndoe%40example.com",
+            )
+            .await?; */
         }
 
         println!("Body written, flushing");
