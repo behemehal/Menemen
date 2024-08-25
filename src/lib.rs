@@ -63,6 +63,15 @@ macro_rules! cfg_imports {
     };
 }
 
+macro_rules! cfg_not_imports {
+    ($feature:literal, $($item:item)*) => {
+        $(
+            #[cfg(not(feature = $feature))]
+            $item
+        )*
+    };
+}
+
 cfg_imports! {
     "async",
     mod async_lib;
@@ -77,8 +86,8 @@ cfg_imports! {
     pub use async_lib::multipart_form;
 }
 
-cfg_imports! {
-    "blocking",
+cfg_not_imports! {
+    "async",
     pub mod blocking;
     /// This module contains client utilities
     pub use blocking::client;

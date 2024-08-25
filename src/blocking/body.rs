@@ -1,14 +1,8 @@
-use std::{
-    fs::File,
-    io::{Read, Write},
-};
+use std::{fs::File, io::Read};
 
 use std::io::Cursor;
 
-use crate::{
-    form_data::{self, FormData},
-    multipart_form_data::MultipartFormData,
-};
+use crate::form_data::FormData;
 
 #[cfg(feature = "multipart")]
 use super::multipart_form::MultipartFormData;
@@ -64,10 +58,11 @@ pub enum BodyType {
     Reader(Box<dyn Read>),
     Bytes(Cursor<Vec<u8>>),
     FormData(FormData),
+    #[cfg(feature = "multipart")]
     MultipartFormData(MultipartFormData),
 }
 
-impl Read for Body {
+/* impl Read for Body {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.body.read(buf)
     }
@@ -140,7 +135,7 @@ impl Write for BodyType {
         Ok(())
     }
 }
-
+ */
 //
 impl Into<Body> for Cursor<Vec<u8>> {
     fn into(self) -> Body {

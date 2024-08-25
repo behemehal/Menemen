@@ -90,7 +90,6 @@ impl MultipartFormData {
         self.form_data.retain(|pair| pair.0 != name);
     }
 
-    #[cfg(feature = "async")]
     pub async fn build(&mut self) -> Result<Vec<u8>, RequestError> {
         let mut byte_buffer = Vec::new();
 
@@ -108,7 +107,7 @@ impl MultipartFormData {
                     byte_buffer.extend_from_slice(
                         "Content-Type: application/octet-stream\r\n\r\n".as_bytes(),
                     );
-                    stream.read_to_end(&mut buffer).await.unwrap();
+                    stream.read_to_end(&mut buffer).await?;
                 }
                 MultipartFormValue::Text(text) => {
                     byte_buffer.extend_from_slice(
@@ -131,7 +130,7 @@ impl MultipartFormData {
                     byte_buffer.extend_from_slice(
                         format!("Content-Type: {}\r\n\r\n", file.content_type).as_bytes(),
                     );
-                    file.file.read_to_end(&mut buffer).await.unwrap();
+                    file.file.read_to_end(&mut buffer).await?;
                 }
             }
             byte_buffer.extend_from_slice(&buffer);

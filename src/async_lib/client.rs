@@ -79,6 +79,7 @@ impl Client {
 
         let mut read_body = None;
 
+        #[cfg(feature = "multipart")]
         if let Some(body_to_send) = &request.body_to_send {
             if let BodyType::MultipartFormData(multipart_form) = &body_to_send.body {
                 request.set_header(
@@ -143,6 +144,8 @@ impl Client {
                     stream,
                     consumed: true,
                     request_chunked,
+                    current_chunk_size: 0,
+                    read_chunk_size: 0,
                 });
             }
 

@@ -66,7 +66,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let response_string = response.text().await?;
     //let response_json = response.json::<HttpRequest>().await?;
 
-
     println!(
         "Response: ({}): {:?}",
         response.response_info.status_code, response_string
@@ -77,24 +76,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(not(feature = "async"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut request = Request::new("http://postman-echo.com/post", RequestTypes::POST).unwrap();
-    /*
-    let form_data: FormData = vec![("key", "value")].into();
-    request.content_type = menemen::request::ContentTypes::FormData;
+    use menemen::{form_data::FormData, multipart_form::MultipartFormData};
+    use tokio::fs::File;
 
-    request.append_body(form_data.into()); */
+    //let form_data: FormData = vec![("key", "value")].into();
+
+    let mut form_data = MultipartFormData::new();
+
+    //form_data.add_stream("strm", Box::new(file));
+    //form_data.add_file("file", "./Cargo.toml").await?;
+    //form_data.add_file("allMightyZip", "./20MB.zip").await?;
+
+    let mut request = Request::new(
+        "http://anglesharp.azurewebsites.net/Chunked",
+        RequestTypes::GET,
+    )?;
+
+    //request.set_header(&"Accept-Encoding", &"gzip");
+    request.append_body(form_data.into());
 
     let mut response = request.send()?;
 
-    println!("Response: {:#?}", response.response_info);
+    println!("Response: {:#?}", response.headers);
 
-    //let response_string = response.text()?;
-    //#[cfg(feature = "json")]
-    //let response = response.json::<Root>()?;
+    let response_string = response.text()?;
+    //let response_json = response.json::<HttpRequest>().await?;
 
-    //#[cfg(not(feature = "json"))]
-    let response = response.text()?;
-
-    println!("Response: {}", response);
+    println!(
+        "Response: ({}): {:?}",
+        response.response_info.status_code, response_string
+    );
+    //println!("Response: ({:#?}): {:?}", response.response_info.status_code, response_json);
     Ok(())
 }
