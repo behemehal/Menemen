@@ -3,7 +3,7 @@
 [![Crates.io Version](https://img.shields.io/crates/v/menemen?logo=rust)](https://crates.io/crates/menemen)
 [![Documentation](https://docs.rs/menemen/badge.svg)](https://docs.rs/menemen)
 
-Menemen is a Turkish food and also simple streaming http/https client.
+Menemen is a Turkish food and also simple streaming http/https blocking/async client.
 
 ```rust
 use std::io::{Write, Read};

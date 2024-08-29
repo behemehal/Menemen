@@ -292,6 +292,10 @@ impl Read for Response {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         println!("Trying to fill buffer: {:?}", buf.len());
         if self.request_chunked {
+            if self.consumed {
+                return Ok(0);
+            }
+
             if self.current_chunk_size == 0 && self.read_chunk_size == 0 {
                 self.current_chunk_size = self.read_chunk_size(false)?;
                 println!("Reading first ever chunk size: {}", self.current_chunk_size);
@@ -300,31 +304,40 @@ impl Read for Response {
             let mut read_buffer_len = 0;
             println!("Remaining buffer len: {}", read_buffer_len);
             while read_buffer_len != buf.len() {
+                let buffflen = buf.len();
                 println!(
                     "While: current_chunk_size: {}, read_chunk_size: {}",
                     self.current_chunk_size, self.read_chunk_size
                 );
+
+
+                let rrr = self.current_chunk_size;;
+                let rrrr = self.read_chunk_size;
+
                 if self.current_chunk_size == self.read_chunk_size {
                     self.current_chunk_size = self.read_chunk_size(true)?;
                     self.read_chunk_size = 0;
 
                     println!("READ NEXT: Read chunk size: {}", self.current_chunk_size);
                     if self.current_chunk_size == 0 {
-                        println!("End of chunked data");
+                        self.consumed = true;
+                        println!("End of chunked data: {}, buffer len: {}", read_buffer_len, buf.len());
                         return Ok(read_buffer_len);
                     }
                 }
 
                 let remaining_chunk_size = self.current_chunk_size - self.read_chunk_size;
 
-                let pointer = remaining_chunk_size.min(buf.len());
-
+                let pointer = remaining_chunk_size.min(buf.len() - read_buffer_len);
                 let read_byte = self.stream.read(&mut buf[..pointer]).unwrap();
                 self.read_chunk_size += read_byte;
                 read_buffer_len += read_byte;
                 println!("READ: Read byte: {}", read_byte);
-                sleep(Duration::from_millis(100));
+                let read_str = String::from_utf8_lossy(buf);
+                println!("Read buffer: {:?}", read_str);
+                println!("Read buffer: {:?}", read_str);
             }
+
             Ok(buf.len())
         } else {
             self.stream.read(buf)

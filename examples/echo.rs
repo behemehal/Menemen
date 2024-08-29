@@ -6,36 +6,6 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "async")]
 use tokio::io::AsyncReadExt;
 
-//
-#[derive(Serialize, Deserialize, Debug)]
-struct HttpRequest {
-    method: String,
-    protocol: String,
-    host: String,
-    path: String,
-    ip: String,
-    headers: HashMap<String, String>,
-    parsedQueryParams: HashMap<String, String>,
-    parsedBody: ParsedBody,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct ParsedBody {
-    textFields: HashMap<String, String>,
-    files: Vec<FileField>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct FileField {
-    name: String,
-    fileName: String,
-    #[serde(rename = "Content-Disposition")]
-    content_disposition: String,
-    #[serde(rename = "Content-Type")]
-    content_type: String,
-}
-
-//
 
 #[cfg(feature = "async")]
 #[tokio::main]
@@ -56,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RequestTypes::GET,
     )?;
 
-    request.set_header(&"Accept-Encoding", &"gzip");
+    //request.set_header(&"Accept-Encoding", &"gzip");
     request.append_body(form_data.into());
 
     let mut response = request.send().await?;
@@ -103,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //let response_json = response.json::<HttpRequest>().await?;
 
     println!(
-        "Response: ({}): {:?}",
+        "Responsed: ({}): {:?}",
         response.response_info.status_code, response_string
     );
     //println!("Response: ({:#?}): {:?}", response.response_info.status_code, response_json);
