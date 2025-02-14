@@ -142,7 +142,7 @@ impl Client {
                     response_info,
                     headers,
                     stream,
-                    consumed: true,
+                    consumed: false,
                     request_chunked,
                     current_chunk_size: 0,
                     read_chunk_size: 0,

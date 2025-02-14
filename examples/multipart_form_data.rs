@@ -46,35 +46,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut form_data_builder = MultipartFormData::new();
 
-    //form_data_builder.add_file("key1", "./20MB.zip").await?;
-
+    form_data_builder.add_file("key1", "./testData/file.txt").await?;
     form_data_builder.add_string("key2", "value2".into());
 
-    println!(
-        "First file oppened, Check the io and memory usage of the program, sleep for 5 seconds"
-    );
+    let body: Body = form_data_builder.into();
 
-
-    let mut body: Body = form_data_builder.into();
-
-    println!("Body built, waiting for 25 seconds copy everything to array");
-
-    //let mut buffer = Vec::new();
 
     match body.body {
-        menemen::body::BodyType::Reader(_) => todo!(),
-        menemen::body::BodyType::Bytes(_) => todo!(),
-        menemen::body::BodyType::FormData(_) => todo!(),
+        menemen::body::BodyType::Reader(_) => unreachable!(),
+        menemen::body::BodyType::Bytes(_) => unreachable!(),
+        menemen::body::BodyType::FormData(_) => unreachable!(),
         menemen::body::BodyType::MultipartFormData(mut multipart) => {
             let built = multipart.build().await?;
-
             let buf_str = String::from_utf8(built).unwrap();
-
-            println!("Built: \n{}", buf_str);
+            println!("Built: \n{:?}", buf_str);
         }
     }
 
-    loop {
-        sleep(Duration::from_secs(1));
-    }
+    Ok(())
 }

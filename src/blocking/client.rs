@@ -8,7 +8,7 @@ use crate::{
 };
 
 use bufstream::BufStream;
-use std::io::{copy, BufRead, Write};
+use std::io::{BufRead, Write};
 use std::net::TcpStream;
 
 #[cfg(feature = "https")]

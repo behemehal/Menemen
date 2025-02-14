@@ -24,10 +24,10 @@ pub struct MultipartFormData {
 
 impl MultipartFormData {
     pub fn new() -> MultipartFormData {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let boundary: String = (0..30)
             .map(|_| {
-                let c: char = rng.gen_range(48..122).into();
+                let c: char = rng.random_range(48..122).into();
                 c
             })
             .collect();

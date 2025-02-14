@@ -6,15 +6,14 @@
 Menemen is a Turkish food and also simple streaming http/https blocking/async client.
 
 ```rust
-use std::io::{Write, Read};
-use menemen::request::{Request, RequestTypes};
-
-fn main() {
-    let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
-    let mut response = request.send().unwrap();
-    let mut text_buffer = Vec::new();
-    response.stream.read_to_end(&mut text_buffer);
-    println!("Text: {}", String::from_utf8_lossy(&text_buffer));
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET)?;
+    let mut response = request.send()?;
+    let response_text = response.text().await?;
+    
+    println!("Text: {response_text}");
+    Ok(())
 }
 ```
 

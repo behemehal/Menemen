@@ -53,6 +53,8 @@ pub mod request;
 pub mod response;
 /// This module contains url utilities
 pub mod url;
+/// A prelude for glob import
+pub mod prelude;
 
 macro_rules! cfg_imports {
     ($feature:literal, $($item:item)*) => {

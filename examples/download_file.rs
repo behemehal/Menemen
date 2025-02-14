@@ -1,21 +1,13 @@
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+#[cfg(not(feature = "async"))]
 use menemen::request::{ContentTypes, Request, RequestTypes};
 use std::{
+    cmp::min,
     fs::File,
-    io::{self, Read, Write},
+    io::{Read, Write},
     panic,
     time::{Duration, Instant},
 };
-
-// Convert byte size to string
-fn byte_size_to_string(size: usize) -> String {
-    if size < 1024 {
-        format!("{}B", size)
-    } else if size < 1024 * 1024 {
-        format!("{}KB", size / 1024)
-    } else {
-        format!("{}MB", size / 1024 / 1024)
-    }
-}
 
 // Convert speed to string in Kbps or Mbps
 fn speed_to_string(speed_kbps: f64) -> String {
@@ -26,7 +18,6 @@ fn speed_to_string(speed_kbps: f64) -> String {
     }
 }
 
-#[cfg(not(feature = "async"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new(
         "http://ipv4.download.thinkbroadband.com/1GB.zip",
@@ -38,12 +29,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut response = request.send()?;
 
-    let mut file = File::open("./20MB.zip")?;
-    let since_ms = Instant::now();
+    let mut file = File::create("./20MB.zip")?;
     let mut last_instant = Instant::now();
     let mut collected_byte_len = 0;
     let mut stream_read_len = 0;
-    let stdout = io::stdout();
 
     let content_len = match response
         .headers
@@ -53,6 +42,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(header) => header.value.parse::<usize>().unwrap_or_else(|_| 0),
         None => 0,
     };
+
+    let pb = ProgressBar::new(content_len as u64);
+    pb.set_style(ProgressStyle::with_template("{spinner:.green} {msg} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+    .unwrap()
+    .with_key("eta", |state: &ProgressState, w: &mut dyn std::fmt::Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
+    .progress_chars("#>-"));
 
     let mut buffer = [0; 8192 * 2]; // Buffer of 8KB
     loop {
@@ -73,29 +68,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     last_instant = Instant::now();
 
                     if content_len == 0 {
-                        println!(
-                            "Downloading Without Content Len: {} | Speed: {} | Active Time: {}s",
-                            byte_size_to_string(stream_read_len),
-                            speed_to_string(speed_kbps),
-                            since_ms.elapsed().as_secs(),
+                        pb.set_style(
+                            ProgressStyle::with_template(
+                                "{spinner:.green} Downloading without content length [{elapsed_precise}] (Downloaded {bytes}, {bytes_per_sec})",
+                            )
+                            .unwrap()
+                            .with_key("eta", |state: &ProgressState, w: &mut dyn std::fmt::Write| {
+                                write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
+                            })
+                            .progress_chars("#>-"),
                         );
+                        pb.set_position(stream_read_len as u64);
                     } else {
-                        let percent = (stream_read_len as f64 / content_len as f64) * 100.0;
-
-                        let output = format!(
-                            "\rDownloading: {} of {}; {:.2}% | Speed: {} | Active Time: {}s",
-                            byte_size_to_string(stream_read_len),
-                            byte_size_to_string(content_len),
-                            percent,
-                            speed_to_string(speed_kbps),
-                            since_ms.elapsed().as_secs(),
-                        );
-                        stdout.lock().write_all(output.as_bytes()).unwrap();
-                        stdout.lock().flush().unwrap();
+                        let new = min(stream_read_len as u64, content_len as u64);
+                        pb.set_message(format!(
+                            "Downloading with speed: {}",
+                            speed_to_string(speed_kbps)
+                        ));
+                        pb.set_position(new);
                     }
                 }
 
-                file.write_all(&buffer[..read_bytes])?;
+                file.write_all(&buffer[..read_bytes]).unwrap();
             }
             Err(e) => {
                 panic!("Error reading stream: {}", e);
@@ -104,4 +98,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("\nDownload complete");
     Ok(())
+}
+
+#[cfg(feature = "async")]
+fn main() {
+    println!("This example does not support 'async' feature.");
 }

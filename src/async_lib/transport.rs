@@ -5,7 +5,7 @@ use tokio::io::{AsyncBufRead, AsyncRead, AsyncWrite, BufStream};
 use native_tls::TlsStream;
 
 #[cfg(feature = "https")]
-use tokio_native_tls::TlsStream;
+use tokio_native_tls::TlsStream as TokioTlsStream;
 
 use std::task::{Context, Poll};
 

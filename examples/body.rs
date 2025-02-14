@@ -8,7 +8,7 @@ fn main() {
     // Using Into for &str
     let body_from_str: Body = string_body.into();
 
-    // Using Into for Strin
+    // Using Into for String
     let string = String::from("Another test string.");
     let body_from_string: Body = string.into();
 

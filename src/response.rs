@@ -1,15 +1,21 @@
-use std::{fmt::Debug, thread::sleep, time::Duration};
-
 use crate::error::RequestError;
 use crate::request;
 use crate::transport::Transport;
 use anyhow::Context;
+use std::fmt::Debug;
+use tokio::io::ReadBuf;
 
+#[cfg(feature = "async")]
+use tokio::io::AsyncRead;
 #[cfg(feature = "async")]
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 #[cfg(not(feature = "async"))]
 use std::io::{BufRead, Read};
+#[cfg(feature = "async")]
+use std::pin::Pin;
+#[cfg(feature = "async")]
+use std::task::Poll;
 
 /// ResponseInfo struct
 #[derive(Clone, Debug, Default)]
@@ -78,7 +84,7 @@ impl Debug for Response {
 impl Response {
     //TODO: Implement AsyncRead instead
     #[cfg(feature = "async")]
-    pub async fn read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
+    pub async fn _read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
         self.consumed = true;
         if self.request_chunked {
             let mut chunk_size = self.read_chunk_size(false).await?;
@@ -141,7 +147,6 @@ impl Response {
             #[cfg(feature = "gzip")]
             {
                 use libflate::gzip::Decoder;
-                use std::io::{Cursor, Read};
 
                 let read_data = self.read_to_end().await?;
                 let read_data = Cursor::new(read_data);
@@ -170,8 +175,13 @@ impl Response {
                 ))
             }
         } else {
-            let read_data = self.read_to_end().await?;
-            String::from_utf8(read_data).map_err(|e| RequestError::TextError(e.to_string()))
+            let mut str_buffer = Vec::new();
+            self.read_to_end(&mut str_buffer).await?;
+
+            Ok(
+                String::from_utf8(str_buffer)
+                    .map_err(|e| RequestError::TextError(e.to_string()))?,
+            )
         }
     }
 
@@ -208,7 +218,6 @@ impl Response {
             }
         } else {
             let mut str_buffer = Vec::new();
-            println!("Reading response text");
             self.read_to_end(&mut str_buffer)?;
 
             Ok(
@@ -290,7 +299,6 @@ impl Response {
 #[cfg(not(feature = "async"))]
 impl Read for Response {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        println!("Trying to fill buffer: {:?}", buf.len());
         if self.request_chunked {
             if self.consumed {
                 return Ok(0);
@@ -298,49 +306,96 @@ impl Read for Response {
 
             if self.current_chunk_size == 0 && self.read_chunk_size == 0 {
                 self.current_chunk_size = self.read_chunk_size(false)?;
-                println!("Reading first ever chunk size: {}", self.current_chunk_size);
             }
 
             let mut read_buffer_len = 0;
-            println!("Remaining buffer len: {}", read_buffer_len);
             while read_buffer_len != buf.len() {
-                let buffflen = buf.len();
-                println!(
-                    "While: current_chunk_size: {}, read_chunk_size: {}",
-                    self.current_chunk_size, self.read_chunk_size
-                );
-
-
-                let rrr = self.current_chunk_size;;
-                let rrrr = self.read_chunk_size;
-
                 if self.current_chunk_size == self.read_chunk_size {
                     self.current_chunk_size = self.read_chunk_size(true)?;
                     self.read_chunk_size = 0;
-
-                    println!("READ NEXT: Read chunk size: {}", self.current_chunk_size);
                     if self.current_chunk_size == 0 {
                         self.consumed = true;
-                        println!("End of chunked data: {}, buffer len: {}", read_buffer_len, buf.len());
                         return Ok(read_buffer_len);
                     }
                 }
-
                 let remaining_chunk_size = self.current_chunk_size - self.read_chunk_size;
-
                 let pointer = remaining_chunk_size.min(buf.len() - read_buffer_len);
-                let read_byte = self.stream.read(&mut buf[..pointer]).unwrap();
+                let read_byte = self
+                    .stream
+                    .read(&mut buf[read_buffer_len..(pointer + read_buffer_len)])?;
                 self.read_chunk_size += read_byte;
                 read_buffer_len += read_byte;
-                println!("READ: Read byte: {}", read_byte);
-                let read_str = String::from_utf8_lossy(buf);
-                println!("Read buffer: {:?}", read_str);
-                println!("Read buffer: {:?}", read_str);
             }
 
             Ok(buf.len())
         } else {
             self.stream.read(buf)
         }
+    }
+}
+
+#[cfg(feature = "async")]
+impl AsyncRead for Response {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        _buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        if self.request_chunked {
+            println!("Self.consumed: {}", self.consumed);
+            if self.consumed {
+                panic!("planed panic");
+                return Poll::Ready(Ok(()));
+            }
+
+            if self.current_chunk_size == 0 && self.read_chunk_size == 0 {
+                let chunk_size = futures::executor::block_on(self.read_chunk_size(false))?;
+                self.current_chunk_size = chunk_size;
+            }
+            self.consumed = true;
+            //todo!()
+
+            Poll::Ready(Ok())
+        } else {
+            todo!()
+        }
+        /*
+        if self.request_chunked {
+            if self.consumed {
+                return Poll::Ready(Ok(()));
+            }
+
+            if self.current_chunk_size == 0 && self.read_chunk_size == 0 {
+                let chunk_size = futures::executor::block_on(self.read_chunk_size(false))?;
+                self.current_chunk_size = chunk_size;
+            }
+
+            let mut read_buffer_len = 0;
+            while read_buffer_len != buf.remaining() {
+                if self.current_chunk_size == self.read_chunk_size {
+                    //let chunk_size = futures::executor::block_on(self.read_chunk_size(true))?;
+                    let mut chunk_size_future = Pin::new(&mut Box::pin(self.read_chunk_size(true)));
+                    let chunk_size = chunk_size_future.poll_unpin(cx);
+                    self.current_chunk_size = chunk_size;
+                    self.read_chunk_size = 0;
+                    if self.current_chunk_size == 0 {
+                        self.consumed = true;
+                        return Poll::Ready(Ok(()));
+                    }
+                }
+                let remaining_chunk_size = self.current_chunk_size - self.read_chunk_size;
+                let pointer = remaining_chunk_size.min(buf.remaining() - read_buffer_len);
+                Pin::new(&mut self.stream).read(buf.slice_mut(read_buffer_len..(pointer + read_buffer_len)));
+                let read_byte = Pin::new(&mut self.stream).poll_read(cx, &mut buf.slice_mut(read_buffer_len..(pointer + read_buffer_len)));
+                self.read_chunk_size += read_byte;
+                read_buffer_len += read_byte;
+            }
+
+            Poll::Ready(Ok(()))
+        } else {
+            //let mut pinned = std::pin::pin!(&self.stream);
+            Pin::new(&mut self.stream).poll_read(cx, buf)
+        }
+        */
     }
 }
