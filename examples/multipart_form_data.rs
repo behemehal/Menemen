@@ -46,11 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut form_data_builder = MultipartFormData::new();
 
-    form_data_builder.add_file("key1", "./testData/file.txt").await?;
+    form_data_builder
+        .add_file("key1", "./testData/file.txt")
+        .await?;
     form_data_builder.add_string("key2", "value2".into());
 
     let body: Body = form_data_builder.into();
-
 
     match body.body {
         menemen::body::BodyType::Reader(_) => unreachable!(),

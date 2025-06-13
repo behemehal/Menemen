@@ -1,6 +1,5 @@
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
-#[cfg(not(feature = "async"))]
-use menemen::request::{ContentTypes, Request, RequestTypes};
+use menemen::prelude::*;
 use std::{
     cmp::min,
     fs::File,
@@ -18,14 +17,12 @@ fn speed_to_string(speed_kbps: f64) -> String {
     }
 }
 
+#[cfg(not(feature = "async"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new(
         "http://ipv4.download.thinkbroadband.com/1GB.zip",
         RequestTypes::GET,
-    )
-    .unwrap();
-    request.set_header("Connection", "close");
-    request.content_type = ContentTypes::OctetStream;
+    )?;
 
     let mut response = request.send()?;
 
@@ -96,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
     }
-    println!("\nDownload complete");
+    pb.finish_with_message("Downloaded");
     Ok(())
 }
 

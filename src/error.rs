@@ -1,9 +1,6 @@
 use std::fmt;
 use std::fmt::Debug;
 
-#[cfg(not(feature = "async"))]
-use std::net::TcpStream;
-
 #[cfg(all(feature = "https", not(feature = "async")))]
 use native_tls;
 

@@ -20,57 +20,49 @@ pub enum Transport {
     Tcp(BufStream<TcpStream>),
 }
 
+impl AsyncRead for Transport {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            #[cfg(feature = "https")]
+            Transport::Ssl(stream) => Pin::new(stream).poll_read(cx, buf),
+            Transport::Tcp(stream) => Pin::new(stream).poll_read(cx, buf),
+        }
+    }
+}
+
 impl AsyncWrite for Transport {
     fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        match &mut *self {
-            #[cfg(all(feature = "https", feature = "async", feature = "https-async"))]
+    ) -> Poll<Result<usize, std::io::Error>> {
+        match self.get_mut() {
+            #[cfg(feature = "https")]
             Transport::Ssl(stream) => Pin::new(stream).poll_write(cx, buf),
-
             Transport::Tcp(stream) => Pin::new(stream).poll_write(cx, buf),
         }
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        match &mut *self {
-            #[cfg(all(feature = "https", not(feature = "async")))]
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+        match self.get_mut() {
+            #[cfg(feature = "https")]
             Transport::Ssl(stream) => Pin::new(stream).poll_flush(cx),
-
-            #[cfg(all(feature = "https", feature = "async", feature = "https-async"))]
-            Transport::Ssl(stream) => Pin::new(stream).poll_flush(cx),
-
             Transport::Tcp(stream) => Pin::new(stream).poll_flush(cx),
         }
     }
 
     fn poll_shutdown(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        match &mut *self {
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        match self.get_mut() {
             #[cfg(feature = "https")]
             Transport::Ssl(stream) => Pin::new(stream).poll_shutdown(cx),
             Transport::Tcp(stream) => Pin::new(stream).poll_shutdown(cx),
-        }
-    }
-}
-
-impl AsyncRead for Transport {
-    fn poll_read(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        match &mut *self {
-            #[cfg(feature = "https")]
-            Transport::Ssl(stream) => Pin::new(stream).poll_read(cx, buf),
-            Transport::Tcp(socket) => Pin::new(socket).poll_read(cx, buf),
         }
     }
 }

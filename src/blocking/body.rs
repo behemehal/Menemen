@@ -62,6 +62,28 @@ pub enum BodyType {
     MultipartFormData(MultipartFormData),
 }
 
+impl Read for Body {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match &mut self.body {
+            BodyType::Reader(reader) => reader.read(buf),
+            BodyType::Bytes(cursor) => cursor.read(buf),
+            BodyType::FormData(form_data) => {
+                let form_data_string = form_data.build();
+                let mut bytes = form_data_string.into_bytes();
+                bytes.extend(b"\n");
+                let mut cursor = Cursor::new(bytes);
+                cursor.read(buf)
+            }
+            BodyType::MultipartFormData(data) => {
+                let built = data.build().unwrap();
+
+                let mut cursor = Cursor::new(built);
+                cursor.read(buf)
+            }
+        }
+    }
+}
+
 /* impl Read for Body {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.body.read(buf)

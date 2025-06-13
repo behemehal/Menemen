@@ -1,17 +1,19 @@
 use crate::error::RequestError;
 use crate::request;
 use crate::transport::Transport;
-use anyhow::Context;
-use std::fmt::Debug;
-use tokio::io::ReadBuf;
+use anyhow::Context as _;
 
+#[cfg(feature = "async")]
+use futures::executor;
 #[cfg(feature = "async")]
 use tokio::io::AsyncRead;
 #[cfg(feature = "async")]
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
+use std::fmt::Debug;
 #[cfg(not(feature = "async"))]
 use std::io::{BufRead, Read};
+
 #[cfg(feature = "async")]
 use std::pin::Pin;
 #[cfg(feature = "async")]
@@ -338,64 +340,114 @@ impl Read for Response {
 impl AsyncRead for Response {
     fn poll_read(
         mut self: Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-        _buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        if self.request_chunked {
-            println!("Self.consumed: {}", self.consumed);
-            if self.consumed {
-                panic!("planed panic");
-                return Poll::Ready(Ok(()));
-            }
-
-            if self.current_chunk_size == 0 && self.read_chunk_size == 0 {
-                let chunk_size = futures::executor::block_on(self.read_chunk_size(false))?;
-                self.current_chunk_size = chunk_size;
-            }
-            self.consumed = true;
-            //todo!()
-
-            Poll::Ready(Ok())
-        } else {
-            todo!()
-        }
-        /*
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<tokio::io::Result<()>> {
         if self.request_chunked {
             if self.consumed {
                 return Poll::Ready(Ok(()));
             }
 
             if self.current_chunk_size == 0 && self.read_chunk_size == 0 {
-                let chunk_size = futures::executor::block_on(self.read_chunk_size(false))?;
-                self.current_chunk_size = chunk_size;
+                let chunk_size = executor::block_on(self.as_mut().read_chunk_size(false)).unwrap();
+                self.as_mut().get_mut().current_chunk_size = chunk_size;
+                buf.advance(chunk_size);
             }
 
             let mut read_buffer_len = 0;
-            while read_buffer_len != buf.remaining() {
-                if self.current_chunk_size == self.read_chunk_size {
-                    //let chunk_size = futures::executor::block_on(self.read_chunk_size(true))?;
-                    let mut chunk_size_future = Pin::new(&mut Box::pin(self.read_chunk_size(true)));
-                    let chunk_size = chunk_size_future.poll_unpin(cx);
-                    self.current_chunk_size = chunk_size;
-                    self.read_chunk_size = 0;
-                    if self.current_chunk_size == 0 {
-                        self.consumed = true;
+
+            println!(
+                "Read buffer len: {}, filled len: {}, initialized_len: {}",
+                read_buffer_len,
+                buf.filled().len(),
+                buf.initialized().len()
+            );
+
+            while read_buffer_len != buf.initialized().len() {
+                println!(
+                    "Read buffer len: {}, filled len: {}",
+                    read_buffer_len,
+                    buf.filled().len()
+                );
+                let this = self.as_mut().get_mut();
+                if this.current_chunk_size == this.read_chunk_size {
+                    let chunk_size =
+                        executor::block_on(self.as_mut().read_chunk_size(true)).unwrap();
+                    buf.advance(chunk_size);
+
+                    self.as_mut().get_mut().current_chunk_size = chunk_size;
+                    self.as_mut().get_mut().read_chunk_size = 0;
+
+                    if self.as_mut().get_mut().current_chunk_size == 0 {
+                        self.as_mut().get_mut().consumed = true;
                         return Poll::Ready(Ok(()));
                     }
+                    //panic!("Not implemented: new chunk size: {}", chunk_size.unwrap());
+                    //self.get_mut().current_chunk_size = chunk_size.unwrap();
+                    //self.get_mut().read_chunk_size = 0;
+                    //if self.current_chunk_size == 0 {
+                    //    self.get_mut().consumed = true;
+                    //    return Poll::Ready(Ok(()));
+                    //}
                 }
-                let remaining_chunk_size = self.current_chunk_size - self.read_chunk_size;
-                let pointer = remaining_chunk_size.min(buf.remaining() - read_buffer_len);
-                Pin::new(&mut self.stream).read(buf.slice_mut(read_buffer_len..(pointer + read_buffer_len)));
-                let read_byte = Pin::new(&mut self.stream).poll_read(cx, &mut buf.slice_mut(read_buffer_len..(pointer + read_buffer_len)));
-                self.read_chunk_size += read_byte;
+
+                let remaining_chunk_size =
+                    self.as_mut().current_chunk_size - self.as_mut().read_chunk_size;
+
+                let pointer = remaining_chunk_size.min(buf.filled().len() - read_buffer_len);
+                //buf.advance(n);
+
+                println!("Pointer: {}", pointer);
+
+                println!("Range: {:?}", read_buffer_len..(pointer + read_buffer_len));
+
+                let read_byte: Result<usize, std::io::Error> = executor::block_on(
+                    self.as_mut()
+                        .stream
+                        .read(&mut buf.filled_mut()[read_buffer_len..(pointer + read_buffer_len)]),
+                );
+
+                let read_byte = read_byte.unwrap();
+
+                println!("Read byte: {}", read_byte);
+
+                self.as_mut().read_chunk_size += read_byte;
                 read_buffer_len += read_byte;
             }
 
-            Poll::Ready(Ok(()))
+            println!(
+                "read_buffer_len: {}, filled len: {}, initialized_len: {}",
+                read_buffer_len,
+                buf.filled().len(),
+                buf.initialized().len()
+            );
+
+            panic!("Not implemented");
+
+            /* let mut read_buffer_len = 0;
+            while read_buffer_len != buf.len() {
+                if self.current_chunk_size == self.read_chunk_size {
+                    let chunk_size = executor::block_on(self.get_mut().read_chunk_size(true));
+                    self.get_mut().current_chunk_size = chunk_size.unwrap();
+                    self.get_mut().read_chunk_size = 0;
+                    if self.current_chunk_size == 0 {
+                        self.get_mut().consumed = true;
+                        return Poll::Ready(Ok(read_buffer_len));
+                    }
+                }
+                let remaining_chunk_size = self.current_chunk_size - self.read_chunk_size;
+                let pointer = remaining_chunk_size.min(buf.len() - read_buffer_len);
+                let read_byte = executor::block_on(self.get_mut().stream.read(
+                    &mut buf[read_buffer_len..(pointer + read_buffer_len)],
+                ));
+                self.get_mut().read_chunk_size += read_byte.unwrap();
+                read_buffer_len += read_byte.unwrap();
+            }
+
+            Poll::Ready(Ok(buf.len())) */
         } else {
-            //let mut pinned = std::pin::pin!(&self.stream);
-            Pin::new(&mut self.stream).poll_read(cx, buf)
+            let mut pinned = std::pin::pin!(self.get_mut().stream);
+            pinned.as_mut().poll_read(cx, buf)
         }
-        */
     }
 }

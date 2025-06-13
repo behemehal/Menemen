@@ -37,20 +37,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
     let mut response = request.send().await?;
 
-    #[cfg(not(feature = "json"))]
-    let response_string = response.text().await?;
-
-    #[cfg(feature = "json")]
     let response_json = response.json::<Root>().await?;
-
-    #[cfg(not(feature = "json"))]
     println!(
-        "Response: ({:#?}): {}",
-        response.response_info.status_code, response_string
-    );
-    #[cfg(feature = "json")]
-    println!(
-        "Response: ({:#?}): {:?}",
+        "Response: ({:#?}): {:#?}",
         response.response_info.status_code, response_json
     );
     Ok(())
@@ -59,26 +48,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(not(feature = "async"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
-
-    request.body("Hello, World!".into());
-
     let mut response = request.send()?;
 
-    #[cfg(not(feature = "json"))]
-    let response_string = response.text()?;
-
     #[cfg(feature = "json")]
-    let response_json = response.json::<Root>()?;
-
-    #[cfg(not(feature = "json"))]
-    println!(
-        "Response: ({:#?}): {}",
-        response.response_info.status_code, response_string
-    );
+    let response_json = response.json::<Root>().unwrap();
 
     #[cfg(feature = "json")]
     println!(
-        "Response: ({:#?}): {:?}",
+        "Response: ({:#?}): {:#?}",
         response.response_info.status_code, response_json
     );
     Ok(())

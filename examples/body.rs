@@ -1,6 +1,7 @@
-use std::io::Cursor;
+use std::{fs::File, io::Cursor};
+use menemen::prelude::*;
 
-use menemen::body::Body;
+/// This example demonstrates how to use the Into trait to convert different types into a Body.
 
 fn main() {
     let string_body = "This is a test string.";
@@ -20,8 +21,13 @@ fn main() {
     let cursor = Cursor::new(vec![5, 6, 7, 8]);
     let body_from_reader: Body = cursor.into();
 
+    // Using Into for File
+    let file = File::open("./testData/file.txt").unwrap();
+    let body_from_file: Body = file.into();
+
     println!("Body from &str: {:?}", body_from_str);
     println!("Body from String: {:?}", body_from_string);
     println!("Body from Vec<u8>: {:?}", body_from_vec);
     println!("Body from Cursor<Vec<u8>>: {:?}", body_from_reader);
+    println!("Body from File: {:?}", body_from_file);
 }

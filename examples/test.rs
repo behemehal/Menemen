@@ -1,6 +1,7 @@
 use menemen::request::{Request, RequestTypes};
 use tokio::io::{copy, AsyncReadExt};
 
+#[cfg(feature = "async")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new(
@@ -20,3 +21,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(not(feature = "async"))]
+fn main() {}

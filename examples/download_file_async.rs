@@ -1,7 +1,5 @@
-#![cfg(feature = "async")]
-use menemen::prelude::*;
-
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use menemen::prelude::*;
 use std::{
     cmp::min,
     fmt::Write,
@@ -9,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{
-    fs,
+    fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
@@ -22,6 +20,7 @@ fn speed_to_string(speed_kbps: f64) -> String {
     }
 }
 
+#[cfg(feature = "async")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new(
@@ -31,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut response = request.send().await?;
 
-    let mut file = fs::File::create("./20MB.zip").await?;
+    let mut file = File::create("./20MB.zip").await?;
     let mut last_instant = Instant::now();
     let mut collected_byte_len = 0;
     let mut stream_read_len = 0;
@@ -100,4 +99,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     pb.finish_with_message("Download complete");
     Ok(())
+}
+
+#[cfg(not(feature = "async"))]
+fn main() {
+    println!("Please enable the 'async' feature to run this example.");
 }

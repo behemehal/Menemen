@@ -2,16 +2,17 @@
 //#![deny(missing_debug_implementations)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, deny(warnings))]
-#![doc(html_root_url = "https://docs.rs/menemen/1.0.3")]
+#![doc(html_root_url = "https://docs.rs/menemen/2.0.0")]
 
 //!# Menemen
-//!Menemen is a Turkish food and also simple streaming http/https client.
+//!Menemen is a Turkish food and also simple streaming http/https blocking/async client.
 //!
 //!## Usage
 //!
 //!```
 //! use std::io::{Write, Read};
 //! use menemen::request::{Request, RequestTypes};
+//! use serde::{Deserialize, Serialize};
 //!
 //! fn main() {
 //!     let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
@@ -21,22 +22,21 @@
 //!     let mut text_buffer = Vec::new();
 //!     response.stream.read_to_end(&mut text_buffer).expect("TODO: panic message");
 //!     println!("Text: {}", String::from_utf8_lossy(&text_buffer));
-//!     //or
-//!     let text = response.text().unwrap();
-//!     println!("Text: {}", text);
 //!
-//!     //or
-//!     let mut response = request.send().unwrap();
+//!     //or read response as text
 //!     let response_string = response.text().unwrap();
 //!
 //!     println!("Response: {}", response_string);
 //!
-//!     //or
+//!     //or read response as json
+//!
+//!     #[derive(Serialize, Deserialize, Debug)]
+//!     struct Args {}
+//!
+//!     #[derive(Serialize, Deserialize, Debug)]
 //!     struct Root {
 //!         pub args: Args
 //!     }
-//!
-//!     let mut response = request.send().unwrap();
 //!     let response_json = response.json::<Root>().unwrap();
 //!     println!("Response: {:?}", response_json.args);
 //! }
@@ -47,14 +47,14 @@
 pub mod error;
 /// Http FormData utilities
 pub mod form_data;
+/// A prelude for glob import
+pub mod prelude;
 /// Http Request utilities
 pub mod request;
 /// This module contains response structs and utilities
 pub mod response;
 /// This module contains url utilities
 pub mod url;
-/// A prelude for glob import
-pub mod prelude;
 
 macro_rules! cfg_imports {
     ($feature:literal, $($item:item)*) => {

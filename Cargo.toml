@@ -72,4 +72,4 @@ path = "examples/gzip.rs"
 [[example]]
 name = "json"
 path = "examples/json.rs"
-reqired-features = ["json"]
+reqired-features = ["json", "async"]

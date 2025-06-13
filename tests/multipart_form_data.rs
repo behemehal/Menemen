@@ -1,3 +1,5 @@
+
+#[cfg(any(feature = "multipart", feature = "async"))]
 mod multipart_form_data {
     use menemen::{body::Body, prelude::MultipartFormData};
 
@@ -15,10 +17,7 @@ mod multipart_form_data {
         let body: Body = form_data_builder.into();
         let data = match body.body {
             menemen::body::BodyType::MultipartFormData(mut multipart) => {
-                let built = multipart
-                    .build()
-                    .await
-                    .expect("Error building multipart form");
+                let built = multipart.build().expect("Error building multipart form");
                 let buf_str = String::from_utf8(built).unwrap();
                 buf_str
             }
