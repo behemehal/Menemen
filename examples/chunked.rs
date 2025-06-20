@@ -8,20 +8,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RequestTypes::GET,
     )?;
 
-    let response = request.send().await?;
+    let mut response = request.send().await?;
 
     println!("Response: {:#?}", response.headers);
 
     let response_string = response.text().await?;
-
-    let r = "asd";
-
-    {
-        println!("{}", r);
-        
-    }
-
-    print!("asd: {}", r);
 
 
     println!(

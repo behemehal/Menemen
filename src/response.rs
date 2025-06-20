@@ -4,9 +4,7 @@ use crate::transport::Transport;
 use anyhow::Context as _;
 
 #[cfg(feature = "async")]
-use futures::executor;
-#[cfg(feature = "async")]
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, ReadBuf};
 #[cfg(feature = "async")]
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
@@ -15,7 +13,7 @@ use std::fmt::Debug;
 use std::io::{BufRead, Read};
 
 #[cfg(feature = "async")]
-use std::pin::Pin;
+use std::{io, pin::Pin, task::Context};
 #[cfg(feature = "async")]
 use std::task::Poll;
 
@@ -340,6 +338,91 @@ impl Read for Response {
 impl AsyncRead for Response {
     fn poll_read(
         mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        if !self.request_chunked {
+            // If not chunked, delegate directly to the underlying stream's poll_read.
+            return Pin::new(&mut self.stream).poll_read(cx, buf);
+        }
+
+        // --- Chunked Reading Logic ---
+
+        if self.consumed {
+            return Poll::Ready(Ok(())); // EOF
+        }
+
+        // If we don't know the current chunk's size, we need to read it.
+        // This part is tricky because read_chunk_size is async.
+        // We can't just `.await` it here. This requires a bit of state management.
+        // A common pattern is to poll a future stored on `self`.
+        // For simplicity here, we'll assume a helper can be polled.
+        // NOTE: A more robust implementation would use a state machine or store the
+        // `read_chunk_size_async` future on `self` to avoid re-starting the read operation.
+
+        // If we have read the entire current chunk, read the size of the next one.
+        if self.current_chunk_size != 0 && self.read_chunk_size == self.current_chunk_size {
+            // This is a conceptual simplification. In a real scenario, you'd
+            // poll a future for reading the next chunk size.
+            match futures::executor::block_on(self.read_chunk_size(true)) {
+                Ok(size) => {
+                    self.current_chunk_size = size;
+                    self.read_chunk_size = 0;
+                    if self.current_chunk_size == 0 {
+                        self.consumed = true;
+                        return Poll::Ready(Ok(())); // End of chunks
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Poll::Pending,
+                Err(e) => return Poll::Ready(Err(e)),
+            }
+        } else if self.current_chunk_size == 0 {
+            // Read the very first chunk size
+            match futures::executor::block_on(self.read_chunk_size(false)) {
+                Ok(size) => self.current_chunk_size = size,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Poll::Pending,
+                Err(e) => return Poll::Ready(Err(e)),
+            }
+        }
+
+        // Now, read data from the current chunk.
+        let remaining_in_chunk = self.current_chunk_size - self.read_chunk_size;
+        let read_limit = std::cmp::min(remaining_in_chunk, buf.remaining());
+
+        if read_limit == 0 {
+            // This can happen if the buffer is full but we are not done with the chunk.
+            return Poll::Ready(Ok(()));
+        }
+
+        // Create a temporary view into the buffer with the calculated limit.
+        let mut limited_buf = buf.take(read_limit);
+        let before_len = limited_buf.filled().len();
+
+        // Poll the underlying stream
+        match Pin::new(&mut self.stream).poll_read(cx, &mut limited_buf) {
+            Poll::Ready(Ok(())) => {
+                let bytes_read = limited_buf.filled().len() - before_len;
+                if bytes_read == 0 {
+                    // Underlying stream ended prematurely.
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "Stream ended before chunk was complete",
+                    )));
+                }
+                self.read_chunk_size += bytes_read;
+                // `buf.advance` is called implicitly by `limited_buf` going out of scope.
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/* #[cfg(feature = "async")]
+impl AsyncRead for Response {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<tokio::io::Result<()>> {
@@ -442,12 +525,18 @@ impl AsyncRead for Response {
                 ));
                 self.get_mut().read_chunk_size += read_byte.unwrap();
                 read_buffer_len += read_byte.unwrap();
-            }
+            }4
 
             Poll::Ready(Ok(buf.len())) */
         } else {
-            let mut pinned = std::pin::pin!(self.get_mut().stream);
-            pinned.as_mut().poll_read(cx, buf)
+
+
+            let inner_poll_Result = Pin::new(&mut self.stream).poll_read(cx, buf);
+            //let mut pinned = std::pin::pin!(self.get_mut().stream);
+            //pinned.as_mut().poll_read(cx, buf)
+
+            todo!()
         }
     }
 }
+ */
