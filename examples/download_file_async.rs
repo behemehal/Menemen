@@ -1,3 +1,5 @@
+//! Downloads a file with progress output using the async client.
+
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use menemen::prelude::*;
 use std::{

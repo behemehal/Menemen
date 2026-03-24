@@ -1,3 +1,5 @@
+//! Shows multiple ways to construct `FormData` values.
+
 use std::collections::HashMap;
 
 use menemen::form_data::FormData;

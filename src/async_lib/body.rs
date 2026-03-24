@@ -7,23 +7,28 @@ use tokio::{fs::File as TokioFile, io::AsyncRead};
 #[cfg(feature = "multipart")]
 use super::multipart_form::MultipartFormData;
 
+/// Request body container for async mode.
 pub struct Body {
+    /// Concrete body representation.
     pub body: BodyType,
 }
 
 impl Body {
+    /// Creates a body from any async reader.
     pub fn from_reader<R: AsyncRead + Unpin + 'static>(reader: R) -> Body {
         Body {
             body: BodyType::Reader(Box::new(reader)),
         }
     }
 
+    /// Creates a body from an owned byte buffer.
     pub fn from_bytes(bytes: Vec<u8>) -> Body {
         Body {
             body: BodyType::Bytes(Cursor::new(bytes)),
         }
     }
 
+    /// Returns the suggested content type for this body when known.
     pub fn content_type(&self) -> Option<String> {
         match &self.body {
             BodyType::Reader(_) => None,
@@ -47,12 +52,29 @@ impl std::fmt::Debug for Body {
     }
 }
 
+/// Concrete async-mode body variants.
 pub enum BodyType {
+    /// Streaming async reader content.
     Reader(Box<dyn AsyncRead + Unpin>),
+    /// In-memory bytes.
     Bytes(Cursor<Vec<u8>>),
+    /// URL-encoded form data.
     FormData(FormData),
     #[cfg(feature = "multipart")]
+    /// Multipart form-data content.
     MultipartFormData(MultipartFormData),
+}
+
+impl std::fmt::Debug for BodyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BodyType::Reader(_) => f.write_str("BodyType::Reader"),
+            BodyType::Bytes(bytes) => f.debug_tuple("BodyType::Bytes").field(bytes).finish(),
+            BodyType::FormData(_) => f.write_str("BodyType::FormData"),
+            #[cfg(feature = "multipart")]
+            BodyType::MultipartFormData(_) => f.write_str("BodyType::MultipartFormData"),
+        }
+    }
 }
 
 impl Into<Body> for Cursor<Vec<u8>> {

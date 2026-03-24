@@ -1,11 +1,14 @@
 fn main() {
-    //If https-async enabled but async not enabled
-    #[cfg(all(feature = "https-async", not(feature = "async")))]
-    compile_error!("Cannot enable 'https-async' feature without enabling 'async' feature.");
+    /*     //If https enabled but async not enabled
+    #[cfg(all(feature = "https-blocking", feature = "async"))]
+    compile_error!("Cannot enable 'https-blocking' feature with 'async' feature, use 'https' feature instead.");
 
-    #[cfg(all(feature = "https-async", not(feature = "https")))]
-    compile_error!("Cannot enable 'https-async' feature without enabling 'https' feature.");
+    #[cfg(all(feature = "https-blocking", feature = "https"))]
+    compile_error!("Cannot enable both 'https-blocking' and 'https' features"); */
 
-    #[cfg(all(feature = "async", feature = "https", not(feature = "https-async")))]
-    compile_error!("Cannot enable 'https' and 'async' features without enabling 'https-async' feature.");
+    #[cfg(not(any(feature = "async", feature = "blocking")))]
+    compile_error!(
+        "Menemen requires either the 'async' or 'blocking' feature to be enabled. \
+     Please enable one in your Cargo.toml."
+    );
 }

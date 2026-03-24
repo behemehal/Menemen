@@ -1,5 +1,5 @@
-//#![deny(missing_docs)]
-//#![deny(missing_debug_implementations)]
+#![deny(missing_docs)]
+#![deny(missing_debug_implementations)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, deny(warnings))]
 #![doc(html_root_url = "https://docs.rs/menemen/2.0.0")]
@@ -15,20 +15,24 @@
 //! use serde::{Deserialize, Serialize};
 //!
 //! fn main() {
-//!     let mut request = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
-//!     let mut response = request.send().unwrap();
+//!     let mut request_stream = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
+//!     let mut response_stream = request_stream.send().unwrap();
 //!
 //!     // Stream response
 //!     let mut text_buffer = Vec::new();
-//!     response.stream.read_to_end(&mut text_buffer).expect("TODO: panic message");
+//!     response_stream.stream.read_to_end(&mut text_buffer).expect("read failed");
 //!     println!("Text: {}", String::from_utf8_lossy(&text_buffer));
 //!
-//!     //or read response as text
-//!     let response_string = response.text().unwrap();
+//!     // or read response as text
+//!     let mut request_text = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
+//!     let mut response_text = request_text.send().unwrap();
+//!     let response_string = response_text.text().unwrap();
 //!
 //!     println!("Response: {}", response_string);
 //!
-//!     //or read response as json
+//!     // or read response as json
+//!     let mut request_json = Request::new("http://postman-echo.com/get", RequestTypes::GET).unwrap();
+//!     let mut response_json_raw = request_json.send().unwrap();
 //!
 //!     #[derive(Serialize, Deserialize, Debug)]
 //!     struct Args {}
@@ -37,7 +41,7 @@
 //!     struct Root {
 //!         pub args: Args
 //!     }
-//!     let response_json = response.json::<Root>().unwrap();
+//!     let response_json = response_json_raw.json::<Root>().unwrap();
 //!     println!("Response: {:?}", response_json.args);
 //! }
 //! ```
@@ -90,6 +94,7 @@ cfg_imports! {
 
 cfg_not_imports! {
     "async",
+    /// Blocking implementation modules.
     pub mod blocking;
     /// This module contains client utilities
     pub use blocking::client;

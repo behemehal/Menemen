@@ -2,9 +2,6 @@ use std::pin::Pin;
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncWrite, BufStream};
 
 #[cfg(feature = "https")]
-use native_tls::TlsStream;
-
-#[cfg(feature = "https")]
 use tokio_native_tls::TlsStream as TokioTlsStream;
 
 use std::task::{Context, Poll};
@@ -15,7 +12,8 @@ use tokio::net::TcpStream;
 #[allow(missing_debug_implementations)]
 pub enum Transport {
     #[cfg(feature = "https")]
-    Ssl(BufStream<TlsStream<TcpStream>>),
+    /// TLS-wrapped stream.
+    Ssl(BufStream<TokioTlsStream<TcpStream>>),
     /// Tcp stream
     Tcp(BufStream<TcpStream>),
 }

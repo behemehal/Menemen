@@ -3,23 +3,32 @@ name = "menemen"
 version = "2.0.0"
 authors = ["Behemehal", "Ahmetcan Aksu"]
 edition = "2021"
-description = "A streaming http request library"
+description = "Menemen is a lightweight streaming HTTP/HTTPS client for Rust with both blocking and async modes."
 categories = ["network-programming"]
-keywords = ["network", "http", "stream"]
+keywords = ["network", "http", "https", "stream", "async", "blocking", "client"]
 license = "GPL-2.0"
 readme = "README.md"
 documentation = "https://docs.rs/menemen"
 repository = "https://github.com/behemehal/Menemen"
 
 [features]
-default = ["json", "multipart", "async"]
-https = ["native-tls"]
-https-async = ["tokio-native-tls"]
+default = ["async", "json", "multipart"]
+
+# CLI tool feature
+cli = ["clap", "clap_complete", "blocking", "https", "json", "multipart"]
+
+# User-facing feature
+https = []
+
+#https-blocking = ["native-tls"]
+#https = ["tokio-native-tls"]
 json = ["serde", "serde_json"]
-async = ["tokio", "futures"]
-blocking = []
+async = ["tokio", "futures", "dep:tokio-native-tls"]
+blocking = ["dep:native-tls"]
 multipart = ["rand", "mime_guess"]
 gzip = ["libflate"]
+danger-transport-no-tls = [
+] # # Allow client to send requests to https endpoints without TLS (not recommended)
 
 [dependencies]
 anyhow = "1.0.95"
@@ -29,6 +38,7 @@ tokio = { version = "1.40.0", features = [
     "net",
     "io-util",
     "fs",
+    "time",
 ], optional = true }
 tokio-native-tls = { version = "0.3.1", optional = true }
 serde = { version = "1.0.217", features = ["derive"], optional = true }
@@ -37,6 +47,10 @@ rand = { version = "0.9.0", optional = true }
 mime_guess = { version = "2.0.5", optional = true }
 libflate = { version = "2.1.0", optional = true }
 futures = { version = "0.3.31", optional = true }
+bytes = "1.10.1"
+pin-project-lite = "0.2.16"
+clap = { version = "4.5", features = ["derive", "cargo"], optional = true }
+clap_complete = { version = "4.5", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.39.2", features = ["full"] }
@@ -49,6 +63,14 @@ name = "download_file"
 path = "examples/download_file.rs"
 
 [[example]]
+name = "body"
+path = "examples/body.rs"
+
+[[example]]
+name = "chunked"
+path = "examples/chunked.rs"
+
+[[example]]
 name = "download_file_async"
 path = "examples/download_file_async.rs"
 required-features = ["async"]
@@ -56,6 +78,10 @@ required-features = ["async"]
 [[example]]
 name = "echo"
 path = "examples/echo.rs"
+
+[[example]]
+name = "form_data"
+path = "examples/form_data.rs"
 
 [[example]]
 name = "parse_url"
@@ -72,4 +98,17 @@ path = "examples/gzip.rs"
 [[example]]
 name = "json"
 path = "examples/json.rs"
-reqired-features = ["json", "async"]
+required-features = ["json", "async"]
+
+[[example]]
+name = "long_polling"
+path = "examples/long_polling.rs"
+
+[[example]]
+name = "multipart_form_data"
+path = "examples/multipart_form_data.rs"
+
+[[bin]]
+name = "menemen"
+path = "src/bin/menemen.rs"
+required-features = ["cli", "blocking"]

@@ -1,3 +1,5 @@
+//! Demonstrates reading a chunked-transfer response in both async and blocking modes.
+
 use menemen::prelude::*;
 
 #[cfg(feature = "async")]

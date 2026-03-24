@@ -68,16 +68,30 @@ impl From<anyhow::Error> for RequestError {
     }
 }
 
-#[cfg(feature = "https")]
-impl From<native_tls::HandshakeError<TcpStream>> for RequestError {
-    fn from(error: native_tls::HandshakeError<TcpStream>) -> Self {
+#[cfg(all(feature = "https", not(feature = "async")))]
+impl From<native_tls::HandshakeError<std::net::TcpStream>> for RequestError {
+    fn from(error: native_tls::HandshakeError<std::net::TcpStream>) -> Self {
         RequestError::ConnectionError(error.to_string())
     }
 }
 
-#[cfg(feature = "https")]
+#[cfg(all(feature = "https", not(feature = "async")))]
 impl From<native_tls::Error> for RequestError {
     fn from(error: native_tls::Error) -> Self {
+        RequestError::ConnectionError(error.to_string())
+    }
+}
+
+#[cfg(all(feature = "https", feature = "async"))]
+impl From<tokio_native_tls::native_tls::Error> for RequestError {
+    fn from(error: tokio_native_tls::native_tls::Error) -> Self {
+        RequestError::ConnectionError(error.to_string())
+    }
+}
+
+#[cfg(all(feature = "https", feature = "async"))]
+impl From<tokio_native_tls::native_tls::HandshakeError<tokio::net::TcpStream>> for RequestError {
+    fn from(error: tokio_native_tls::native_tls::HandshakeError<tokio::net::TcpStream>) -> Self {
         RequestError::ConnectionError(error.to_string())
     }
 }

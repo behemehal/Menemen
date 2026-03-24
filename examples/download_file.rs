@@ -1,5 +1,9 @@
+//! Downloads a file with progress output using the blocking client.
+
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+#[cfg(not(feature = "async"))]
 use menemen::prelude::*;
+#[cfg(not(feature = "async"))]
 use std::{
     cmp::min,
     fs::File,
@@ -9,6 +13,7 @@ use std::{
 };
 
 // Convert speed to string in Kbps or Mbps
+#[cfg(not(feature = "async"))]
 fn speed_to_string(speed_kbps: f64) -> String {
     if speed_kbps < 1024.0 {
         format!("{:.2} Kbps", speed_kbps)

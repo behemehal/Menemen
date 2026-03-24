@@ -28,14 +28,31 @@ impl Header {
         if !line.contains(":") {
             return Err(anyhow::anyhow!("Failed to parse response info"));
         }
-        let parts = line.split(": ").collect::<Vec<_>>();
-        let name = parts[0].to_string();
-        let value = if parts.len() == 1 {
-            String::new()
-        } else {
-            parts[1].to_string()
-        };
+        let mut parts = line.splitn(2, ':');
+        let name = parts
+            .next()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        if name.is_empty() {
+            return Err(anyhow::anyhow!("Failed to parse response info"));
+        }
+        let value = parts
+            .next()
+            .map(|s| s.trim_start().to_string())
+            .unwrap_or_default();
         Ok(Header { name, value })
+    }
+}
+
+fn has_invalid_header_chars(value: &str) -> bool {
+    value.contains('\r') || value.contains('\n')
+}
+
+fn host_header_value(url: &Url) -> String {
+    if url.port == 443 || url.port == 80 {
+        url.host.clone()
+    } else {
+        format!("{}:{}", url.host, url.port)
     }
 }
 
@@ -156,23 +173,7 @@ impl Request {
             timeout: 5000,
             sent: false,
         };
-        request.set_header(
-            "Host",
-            &format!(
-                "{}{}{}",
-                url.host,
-                if url.port == 443 || url.port == 80 {
-                    ""
-                } else {
-                    ":"
-                },
-                if url.port == 443 || url.port == 80 {
-                    "".to_string()
-                } else {
-                    url.port.to_string()
-                },
-            ),
-        );
+        request.set_header("Host", &host_header_value(&url));
         request.set_header("Connection", "close");
         request.set_header("Cache-Control", "max-age=0");
         request.set_header(
@@ -229,6 +230,15 @@ impl Request {
         }
     }
 
+    pub(crate) fn timeout(&self) -> u64 {
+        self.timeout
+    }
+
+    pub(crate) fn set_url(&mut self, url: Url) {
+        self.url = url.clone();
+        let _ = self.set_header("Host", &host_header_value(&url));
+    }
+
     /// Get headers of the request
     /// ## Returns
     /// [`Vec<Header>`]
@@ -261,6 +271,14 @@ impl Request {
     pub fn set_header(&mut self, key: &str, value: &str) -> Option<RequestError> {
         if self.sent {
             Some(RequestError::CantSetHeadersAfterRequestSent)
+        } else if key.is_empty()
+            || key.contains(':')
+            || has_invalid_header_chars(key)
+            || has_invalid_header_chars(value)
+        {
+            Some(RequestError::ConnectionError(
+                "Invalid header name/value".to_string(),
+            ))
         } else {
             let q = self.headers.iter_mut().find(|h| h.name == key);
             match q {
@@ -295,9 +313,11 @@ impl Request {
             return Err(RequestError::AlreadySent);
         } else {
             let client = Client::new(self.url.clone());
-            client
+            let response = client
                 .send_request(self.url.is_https && cfg!(feature = "https"), self)
-                .await
+                .await?;
+            self.sent = true;
+            Ok(response)
         }
     }
 
@@ -310,7 +330,16 @@ impl Request {
             return Err(RequestError::AlreadySent);
         } else {
             let client = Client::new(self.url.clone());
-            client.send_request(self.url.is_https && cfg!(feature = "https"), self)
+
+            let can_proceed = cfg!(feature = "https") || cfg!(feature = "danger-transport-no-tls");
+
+            if self.url.is_https && !can_proceed {
+                return Err(RequestError::TlsNotEnabled);
+            }
+
+            let response = client.send_request(self.url.is_https, self)?;
+            self.sent = true;
+            Ok(response)
         }
     }
 }

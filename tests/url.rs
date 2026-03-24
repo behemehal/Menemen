@@ -109,4 +109,40 @@ mod tests {
         assert_eq!(url.paths.len(), 0);
         assert_eq!(url.query_params, vec![]);
     }
+
+    #[test]
+    fn test_query_params_without_explicit_value() {
+        let url = menemen::url::Url::build_from_string(
+            "https://example.com/test?flag&empty=&key=value".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            url.query_params,
+            vec![
+                QueryParam {
+                    name: "flag".to_string(),
+                    value: "".to_string(),
+                },
+                QueryParam {
+                    name: "empty".to_string(),
+                    value: "".to_string(),
+                },
+                QueryParam {
+                    name: "key".to_string(),
+                    value: "value".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_join_query_params() {
+        let url = menemen::url::Url::build_from_string(
+            "https://example.com/test?first=1&second=2".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(url.join_query_params(), "first=1&second=2");
+    }
 }

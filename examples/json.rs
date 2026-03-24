@@ -1,3 +1,5 @@
+//! Demonstrates JSON deserialization from a GET response.
+
 use menemen::request::{Request, RequestTypes};
 use serde::{Deserialize, Serialize};
 

@@ -1,3 +1,5 @@
+//! Sends a JSON POST request and prints response headers and body.
+
 use menemen::prelude::*;
 
 #[cfg(feature = "async")]

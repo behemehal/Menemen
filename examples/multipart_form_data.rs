@@ -1,18 +1,11 @@
+//! Demonstrates multipart form-data body creation in async and blocking modes.
+
 #[cfg(feature = "async")]
-use tokio::{fs::File, io::AsyncRead, time::sleep};
-
-use std::time::Duration;
-
-#[cfg(not(feature = "async"))]
-use std::{fs::File, io::Read};
-
-use std::any::Any;
-
 use menemen::multipart_form::MultipartFormData;
 
 #[cfg(not(feature = "async"))]
 fn main() {
-    use std::{io, thread::sleep};
+    use std::io;
 
     use menemen::{body::Body, form_data::FormData};
 
@@ -27,7 +20,7 @@ fn main() {
         body.size_hint()
     );
 
-    let mut buffer: Vec<u8> = Vec::new();
+    let buffer: Vec<u8> = Vec::new();
 
     println!("Buffer: {:?}", buffer);
 

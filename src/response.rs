@@ -3,19 +3,21 @@ use crate::request;
 use crate::transport::Transport;
 use anyhow::Context as _;
 
-#[cfg(feature = "async")]
-use tokio::io::{AsyncRead, ReadBuf};
+use bytes::BytesMut;
+use pin_project_lite::pin_project;
 #[cfg(feature = "async")]
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+#[cfg(feature = "async")]
+use tokio::io::{AsyncRead, ReadBuf};
 
 use std::fmt::Debug;
 #[cfg(not(feature = "async"))]
 use std::io::{BufRead, Read};
 
 #[cfg(feature = "async")]
-use std::{io, pin::Pin, task::Context};
-#[cfg(feature = "async")]
 use std::task::Poll;
+#[cfg(feature = "async")]
+use std::{io, pin::Pin, task::Context};
 
 /// ResponseInfo struct
 #[derive(Clone, Debug, Default)]
@@ -56,20 +58,21 @@ impl ResponseInfo {
     }
 }
 
-/// [`Response`] struct contains incoming headers ([`Vec<request::Header>`]), [`ResponseInfo`], and stream ([`Transport`]) which implements [`std::io::Read`], [`std::io::Write`] and [`std::io::BufRead`]
-#[allow(missing_debug_implementations)]
-pub struct Response {
-    /// Response info [`ResponseInfo`]
-    pub response_info: ResponseInfo,
-    /// Response headers [`Vec<request::Header>`]
-    pub headers: Vec<request::Header>,
-    /// Incoming body stream
-    pub stream: Transport,
-    /// Flag that indicates if the response is already consumed
-    pub(crate) consumed: bool,
-    pub(crate) request_chunked: bool,
-    pub(crate) current_chunk_size: usize,
-    pub(crate) read_chunk_size: usize,
+pin_project! {
+    /// HTTP response with headers, status metadata, and a readable body stream.
+    #[allow(missing_docs)]
+    pub struct Response {
+        pub response_info: ResponseInfo,
+        pub headers: Vec<request::Header>,
+        #[pin]
+        pub stream: Transport,
+        pub(crate) consumed: bool,
+        pub(crate) request_chunked: bool,
+        pub(crate) current_chunk_size: usize,
+        pub(crate) read_chunk_size: usize,
+        pub(crate) chunk_parse_buffer: BytesMut,
+        pub(crate) crlf_skip_done: bool,
+    }
 }
 
 impl Debug for Response {
@@ -84,6 +87,7 @@ impl Debug for Response {
 impl Response {
     //TODO: Implement AsyncRead instead
     #[cfg(feature = "async")]
+    /// Reads the full body into memory.
     pub async fn _read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
         self.consumed = true;
         if self.request_chunked {
@@ -113,6 +117,7 @@ impl Response {
     }
 
     #[cfg(not(feature = "async"))]
+    /// Reads the full body into memory.
     pub fn _read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
         self.consumed = true;
         if self.request_chunked {
@@ -136,6 +141,7 @@ impl Response {
     }
 
     #[cfg(feature = "async")]
+    /// Reads the body as UTF-8 text, with optional gzip decoding.
     pub async fn text(&mut self) -> Result<String, RequestError> {
         let content_encoding = self
             .headers
@@ -186,6 +192,7 @@ impl Response {
     }
 
     #[cfg(not(feature = "async"))]
+    /// Reads the body as UTF-8 text, with optional gzip decoding.
     pub fn text(&mut self) -> Result<String, RequestError> {
         let content_encoding = self
             .headers
@@ -228,6 +235,7 @@ impl Response {
     }
 
     #[cfg(all(feature = "async", feature = "json"))]
+    /// Deserializes the response body from JSON.
     pub async fn json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, RequestError> {
         self.consumed = true;
         let string = self.text().await?;
@@ -236,6 +244,7 @@ impl Response {
     }
 
     #[cfg(all(not(feature = "async"), feature = "json"))]
+    /// Deserializes the response body from JSON.
     pub fn json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, RequestError> {
         self.consumed = true;
         let string = self.text()?;
@@ -266,7 +275,8 @@ impl Response {
             ));
         }
 
-        Ok(usize::from_str_radix(&chunk_size_string.trim_end(), 16).unwrap())
+        usize::from_str_radix(chunk_size_string.trim_end(), 16)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
     }
 
     #[cfg(not(feature = "async"))]
@@ -292,7 +302,8 @@ impl Response {
             ));
         }
 
-        Ok(usize::from_str_radix(&chunk_size_string.trim_end(), 16).unwrap())
+        usize::from_str_radix(chunk_size_string.trim_end(), 16)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
     }
 }
 
@@ -337,206 +348,128 @@ impl Read for Response {
 #[cfg(feature = "async")]
 impl AsyncRead for Response {
     fn poll_read(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        if !self.request_chunked {
-            // If not chunked, delegate directly to the underlying stream's poll_read.
-            return Pin::new(&mut self.stream).poll_read(cx, buf);
+        use tokio::io::AsyncBufRead;
+
+        let mut this = self.project();
+
+        if !*this.request_chunked {
+            return this.stream.poll_read(cx, buf);
         }
 
-        // --- Chunked Reading Logic ---
-
-        if self.consumed {
-            return Poll::Ready(Ok(())); // EOF
-        }
-
-        // If we don't know the current chunk's size, we need to read it.
-        // This part is tricky because read_chunk_size is async.
-        // We can't just `.await` it here. This requires a bit of state management.
-        // A common pattern is to poll a future stored on `self`.
-        // For simplicity here, we'll assume a helper can be polled.
-        // NOTE: A more robust implementation would use a state machine or store the
-        // `read_chunk_size_async` future on `self` to avoid re-starting the read operation.
-
-        // If we have read the entire current chunk, read the size of the next one.
-        if self.current_chunk_size != 0 && self.read_chunk_size == self.current_chunk_size {
-            // This is a conceptual simplification. In a real scenario, you'd
-            // poll a future for reading the next chunk size.
-            match futures::executor::block_on(self.read_chunk_size(true)) {
-                Ok(size) => {
-                    self.current_chunk_size = size;
-                    self.read_chunk_size = 0;
-                    if self.current_chunk_size == 0 {
-                        self.consumed = true;
-                        return Poll::Ready(Ok(())); // End of chunks
-                    }
-                }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Poll::Pending,
-                Err(e) => return Poll::Ready(Err(e)),
-            }
-        } else if self.current_chunk_size == 0 {
-            // Read the very first chunk size
-            match futures::executor::block_on(self.read_chunk_size(false)) {
-                Ok(size) => self.current_chunk_size = size,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Poll::Pending,
-                Err(e) => return Poll::Ready(Err(e)),
-            }
-        }
-
-        // Now, read data from the current chunk.
-        let remaining_in_chunk = self.current_chunk_size - self.read_chunk_size;
-        let read_limit = std::cmp::min(remaining_in_chunk, buf.remaining());
-
-        if read_limit == 0 {
-            // This can happen if the buffer is full but we are not done with the chunk.
+        if *this.consumed || buf.remaining() == 0 {
             return Poll::Ready(Ok(()));
         }
 
-        // Create a temporary view into the buffer with the calculated limit.
-        let mut limited_buf = buf.take(read_limit);
-        let before_len = limited_buf.filled().len();
-
-        // Poll the underlying stream
-        match Pin::new(&mut self.stream).poll_read(cx, &mut limited_buf) {
-            Poll::Ready(Ok(())) => {
-                let bytes_read = limited_buf.filled().len() - before_len;
-                if bytes_read == 0 {
-                    // Underlying stream ended prematurely.
-                    return Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        "Stream ended before chunk was complete",
-                    )));
+        // Advance to the next chunk when the current one is exhausted.
+        // current_chunk_size == read_chunk_size means we need a new chunk header.
+        if *this.current_chunk_size == *this.read_chunk_size {
+            // For non-initial chunks, skip the trailing \r\n that follows the
+            // chunk data before reading the next chunk-size line.
+            // crlf_skip_done tracks that the trailing CRLF was already consumed so a
+            // Poll::Pending from the chunk-size parser doesn't re-trigger the skip.
+            if *this.current_chunk_size > 0 && !*this.crlf_skip_done {
+                loop {
+                    let found_lf;
+                    let n;
+                    {
+                        let available = match this.stream.as_mut().poll_fill_buf(cx) {
+                            Poll::Ready(Ok(data)) => data,
+                            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                            Poll::Pending => return Poll::Pending,
+                        };
+                        if available.is_empty() {
+                            return Poll::Ready(Err(io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                "connection closed while skipping chunk CRLF",
+                            )));
+                        }
+                        match available.iter().position(|&b| b == b'\n') {
+                            Some(pos) => { n = pos + 1; found_lf = true; }
+                            None => { n = available.len(); found_lf = false; }
+                        }
+                    }
+                    this.stream.as_mut().consume(n);
+                    if found_lf {
+                        *this.crlf_skip_done = true;
+                        break;
+                    }
                 }
-                self.read_chunk_size += bytes_read;
-                // `buf.advance` is called implicitly by `limited_buf` going out of scope.
-                Poll::Ready(Ok(()))
             }
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
 
-/* #[cfg(feature = "async")]
-impl AsyncRead for Response {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> Poll<tokio::io::Result<()>> {
-        if self.request_chunked {
-            if self.consumed {
+            // Read the chunk-size line (hex digits followed by \r\n), accumulating
+            // partial data in chunk_parse_buffer across Poll::Pending returns.
+            loop {
+                let found_lf;
+                let n;
+                {
+                    let available = match this.stream.as_mut().poll_fill_buf(cx) {
+                        Poll::Ready(Ok(data)) => data,
+                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                        Poll::Pending => return Poll::Pending,
+                    };
+                    if available.is_empty() {
+                        return Poll::Ready(Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "connection closed while reading chunk size",
+                        )));
+                    }
+                    match available.iter().position(|&b| b == b'\n') {
+                        Some(pos) => {
+                            this.chunk_parse_buffer.extend_from_slice(&available[..pos]);
+                            n = pos + 1;
+                            found_lf = true;
+                        }
+                        None => {
+                            this.chunk_parse_buffer.extend_from_slice(available);
+                            n = available.len();
+                            found_lf = false;
+                        }
+                    }
+                }
+                this.stream.as_mut().consume(n);
+                if found_lf { break; }
+            }
+
+            let hex_str = std::str::from_utf8(this.chunk_parse_buffer)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+            let chunk_size = usize::from_str_radix(hex_str.trim(), 16)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+            this.chunk_parse_buffer.clear();
+            *this.crlf_skip_done = false;
+            *this.current_chunk_size = chunk_size;
+            *this.read_chunk_size = 0;
+
+            if chunk_size == 0 {
+                *this.consumed = true;
                 return Poll::Ready(Ok(()));
             }
-
-            if self.current_chunk_size == 0 && self.read_chunk_size == 0 {
-                let chunk_size = executor::block_on(self.as_mut().read_chunk_size(false)).unwrap();
-                self.as_mut().get_mut().current_chunk_size = chunk_size;
-                buf.advance(chunk_size);
-            }
-
-            let mut read_buffer_len = 0;
-
-            println!(
-                "Read buffer len: {}, filled len: {}, initialized_len: {}",
-                read_buffer_len,
-                buf.filled().len(),
-                buf.initialized().len()
-            );
-
-            while read_buffer_len != buf.initialized().len() {
-                println!(
-                    "Read buffer len: {}, filled len: {}",
-                    read_buffer_len,
-                    buf.filled().len()
-                );
-                let this = self.as_mut().get_mut();
-                if this.current_chunk_size == this.read_chunk_size {
-                    let chunk_size =
-                        executor::block_on(self.as_mut().read_chunk_size(true)).unwrap();
-                    buf.advance(chunk_size);
-
-                    self.as_mut().get_mut().current_chunk_size = chunk_size;
-                    self.as_mut().get_mut().read_chunk_size = 0;
-
-                    if self.as_mut().get_mut().current_chunk_size == 0 {
-                        self.as_mut().get_mut().consumed = true;
-                        return Poll::Ready(Ok(()));
-                    }
-                    //panic!("Not implemented: new chunk size: {}", chunk_size.unwrap());
-                    //self.get_mut().current_chunk_size = chunk_size.unwrap();
-                    //self.get_mut().read_chunk_size = 0;
-                    //if self.current_chunk_size == 0 {
-                    //    self.get_mut().consumed = true;
-                    //    return Poll::Ready(Ok(()));
-                    //}
-                }
-
-                let remaining_chunk_size =
-                    self.as_mut().current_chunk_size - self.as_mut().read_chunk_size;
-
-                let pointer = remaining_chunk_size.min(buf.filled().len() - read_buffer_len);
-                //buf.advance(n);
-
-                println!("Pointer: {}", pointer);
-
-                println!("Range: {:?}", read_buffer_len..(pointer + read_buffer_len));
-
-                let read_byte: Result<usize, std::io::Error> = executor::block_on(
-                    self.as_mut()
-                        .stream
-                        .read(&mut buf.filled_mut()[read_buffer_len..(pointer + read_buffer_len)]),
-                );
-
-                let read_byte = read_byte.unwrap();
-
-                println!("Read byte: {}", read_byte);
-
-                self.as_mut().read_chunk_size += read_byte;
-                read_buffer_len += read_byte;
-            }
-
-            println!(
-                "read_buffer_len: {}, filled len: {}, initialized_len: {}",
-                read_buffer_len,
-                buf.filled().len(),
-                buf.initialized().len()
-            );
-
-            panic!("Not implemented");
-
-            /* let mut read_buffer_len = 0;
-            while read_buffer_len != buf.len() {
-                if self.current_chunk_size == self.read_chunk_size {
-                    let chunk_size = executor::block_on(self.get_mut().read_chunk_size(true));
-                    self.get_mut().current_chunk_size = chunk_size.unwrap();
-                    self.get_mut().read_chunk_size = 0;
-                    if self.current_chunk_size == 0 {
-                        self.get_mut().consumed = true;
-                        return Poll::Ready(Ok(read_buffer_len));
-                    }
-                }
-                let remaining_chunk_size = self.current_chunk_size - self.read_chunk_size;
-                let pointer = remaining_chunk_size.min(buf.len() - read_buffer_len);
-                let read_byte = executor::block_on(self.get_mut().stream.read(
-                    &mut buf[read_buffer_len..(pointer + read_buffer_len)],
-                ));
-                self.get_mut().read_chunk_size += read_byte.unwrap();
-                read_buffer_len += read_byte.unwrap();
-            }4
-
-            Poll::Ready(Ok(buf.len())) */
-        } else {
-
-
-            let inner_poll_Result = Pin::new(&mut self.stream).poll_read(cx, buf);
-            //let mut pinned = std::pin::pin!(self.get_mut().stream);
-            //pinned.as_mut().poll_read(cx, buf)
-
-            todo!()
         }
+
+        // Read data from the current chunk, capped at remaining bytes in this chunk.
+        let remaining_in_chunk = *this.current_chunk_size - *this.read_chunk_size;
+        let to_copy;
+        {
+            let available = match this.stream.as_mut().poll_fill_buf(cx) {
+                Poll::Ready(Ok(data)) => data,
+                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                Poll::Pending => return Poll::Pending,
+            };
+            if available.is_empty() {
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "connection closed while reading chunk data",
+                )));
+            }
+            to_copy = remaining_in_chunk.min(buf.remaining()).min(available.len());
+            buf.put_slice(&available[..to_copy]);
+        }
+        this.stream.as_mut().consume(to_copy);
+        *this.read_chunk_size += to_copy;
+
+        Poll::Ready(Ok(()))
     }
 }
- */

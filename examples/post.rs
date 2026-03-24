@@ -1,24 +1,24 @@
+//! Sends JSON from a local file in both blocking and async variants.
+
 use menemen::request::{ContentTypes, Request, RequestTypes};
 
 #[cfg(not(feature = "async"))]
-use std::{fs::File, io::Read};
+use std::fs::File;
 
 #[cfg(feature = "async")]
 use tokio::fs::File;
 
 #[cfg(not(feature = "async"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use menemen::body::Body;
+    // Create a new request.
+    let mut request = Request::new("https://postman-echo.com/post", RequestTypes::POST)?;
 
-    //Create a new request
-    let mut request = Request::new("https://postman-echo.com/post", RequestTypes::POST).unwrap();
-
-    //Read file, and append it to the request
-    let file = File::open("./examples/post.json").unwrap();
+    // Read a file and append it to the request body.
+    let file = File::open("./examples/post.json")?;
     request.append_body(file.into());
 
-    //Set content type
-    request.content_type = ContentTypes::JSON; 
+    // Set content type.
+    request.content_type = ContentTypes::JSON;
 
     let mut response = request.send()?;
 
@@ -29,15 +29,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(feature = "async")]
-async fn main() {
-    let mut request = Request::new("https://postman-echo.com/post", RequestTypes::POST).unwrap();
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut request = Request::new("https://postman-echo.com/post", RequestTypes::POST)?;
 
-    let mut file = File::open("./examples/post.json").await.unwrap();
-    //Read file
+    let file = File::open("./examples/post.json").await?;
     request.content_type = ContentTypes::JSON;
-    let mut response = request.send_with_body(&mut file).await.unwrap();
-    let mut text_buffer = Vec::new();
-    response.stream.read_to_end(&mut text_buffer).await.unwrap();
-    println!("Text: {}", String::from_utf8_lossy(&text_buffer));
+    request.append_body(file.into());
+
+    let mut response = request.send().await?;
+    let text = response.text().await?;
+    println!("Text: {}", text);
     println!("Response info: {:?}", response.response_info);
+    Ok(())
 }

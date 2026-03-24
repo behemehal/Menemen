@@ -1,3 +1,5 @@
+//! Parses a URL using Menemen's URL parser and prints structured output.
+
 fn main() {
     match menemen::url::Url::build_from_string("https://example.com".to_string()) {
         Ok(url) => {

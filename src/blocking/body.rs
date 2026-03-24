@@ -7,23 +7,28 @@ use crate::form_data::FormData;
 #[cfg(feature = "multipart")]
 use super::multipart_form::MultipartFormData;
 
+/// Request body container for blocking mode.
 pub struct Body {
+    /// Concrete body representation.
     pub body: BodyType,
 }
 
 impl Body {
+    /// Creates a body from any blocking reader.
     pub fn from_reader<R: Read + 'static>(reader: R) -> Body {
         Body {
             body: BodyType::Reader(Box::new(reader)),
         }
     }
 
+    /// Creates a body from an owned byte buffer.
     pub fn from_bytes(bytes: Vec<u8>) -> Body {
         Body {
             body: BodyType::Bytes(Cursor::new(bytes)),
         }
     }
 
+    /// Returns the body size when it can be determined without reading streams.
     pub fn size_hint(&self) -> Option<usize> {
         match &self.body {
             BodyType::Reader(_) => None,
@@ -33,6 +38,7 @@ impl Body {
         }
     }
 
+    /// Returns the suggested content type for this body when known.
     pub fn content_type(&self) -> Option<String> {
         match &self.body {
             BodyType::Reader(_) => None,
@@ -54,12 +60,29 @@ impl std::fmt::Debug for Body {
     }
 }
 
+/// Concrete blocking-mode body variants.
 pub enum BodyType {
+    /// Streaming reader content.
     Reader(Box<dyn Read>),
+    /// In-memory bytes.
     Bytes(Cursor<Vec<u8>>),
+    /// URL-encoded form data.
     FormData(FormData),
     #[cfg(feature = "multipart")]
+    /// Multipart form-data content.
     MultipartFormData(MultipartFormData),
+}
+
+impl std::fmt::Debug for BodyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BodyType::Reader(_) => f.write_str("BodyType::Reader"),
+            BodyType::Bytes(bytes) => f.debug_tuple("BodyType::Bytes").field(bytes).finish(),
+            BodyType::FormData(_) => f.write_str("BodyType::FormData"),
+            #[cfg(feature = "multipart")]
+            BodyType::MultipartFormData(_) => f.write_str("BodyType::MultipartFormData"),
+        }
+    }
 }
 
 impl Read for Body {
