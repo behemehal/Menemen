@@ -24,7 +24,7 @@
   valid per RFC 2046
 - Fix `blocking::MultipartFormData::add_file` being declared `async`, which made
   it uncallable without an executor
-- Drop the `anyhow`, `bufstream`, `futures` and `clap_complete` dependencies
+- Drop the `anyhow`, `bufstream` and `futures` dependencies
 - Add `Request::set_follow_redirects` to opt out of automatic redirects
 - CLI: implement shell completions, `--multipart`, `--no-follow` and
   `--color`, which were previously accepted but inert
