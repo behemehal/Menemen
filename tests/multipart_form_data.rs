@@ -43,6 +43,74 @@ mod multipart_form_data {
         assert_eq!(data, correct_data);
     }
 
+    /// Builds a form to its wire representation.
+    async fn build_to_string(form_data_builder: MultipartFormData) -> String {
+        let body: Body = form_data_builder.into();
+        match body.body {
+            menemen::body::BodyType::MultipartFormData(mut multipart) => {
+                #[cfg(feature = "async")]
+                let built = multipart.build().await.expect("build multipart");
+
+                #[cfg(not(feature = "async"))]
+                let built = multipart.build().expect("build multipart");
+
+                String::from_utf8(built).expect("utf8")
+            }
+            _ => panic!("Body is not MultipartFormData"),
+        }
+    }
+
+    /// Regression: the filename was taken with `split('/')`, so on Windows —
+    /// where paths use backslashes — nothing split and the caller's entire
+    /// absolute path went out in `Content-Disposition`, leaking their
+    /// username and directory layout to the server.
+    #[tokio::test]
+    async fn file_part_sends_only_the_base_name() {
+        let separator = std::path::MAIN_SEPARATOR;
+        let path = format!(".{separator}testData{separator}file.txt");
+
+        let mut form_data_builder = MultipartFormData::new();
+
+        #[cfg(feature = "async")]
+        form_data_builder
+            .add_file("doc", &path)
+            .await
+            .expect("add file");
+
+        #[cfg(not(feature = "async"))]
+        form_data_builder.add_file("doc", &path).expect("add file");
+
+        let text = build_to_string(form_data_builder).await;
+
+        assert!(
+            text.contains("filename=\"file.txt\""),
+            "expected a bare filename, got: {text}"
+        );
+        assert!(
+            !text.contains("testData"),
+            "the local path leaked into the request: {text}"
+        );
+    }
+
+    /// A quote or CRLF in a field name must not be able to close the quoted
+    /// string or start a new header line.
+    #[tokio::test]
+    async fn field_names_cannot_inject_headers() {
+        let mut form_data_builder = MultipartFormData::new();
+        form_data_builder.add_string("a\"b\r\nX-Injected: yes", "value".to_string());
+
+        let text = build_to_string(form_data_builder).await;
+
+        assert!(
+            !text.contains("\r\nX-Injected"),
+            "field name injected a header line: {text}"
+        );
+        assert!(
+            text.contains("name=\"a\\\"bX-Injected: yes\""),
+            "quote was not escaped: {text}"
+        );
+    }
+
     /// Derives the boundary from a built body, since the field is crate-private.
     async fn built_boundary() -> String {
         let mut form_data_builder = MultipartFormData::new();

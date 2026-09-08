@@ -8,6 +8,16 @@ categories = ["network-programming"]
 keywords = ["network", "http", "https", "stream", "async", "blocking", "client"]
 license = "GPL-2.0"
 readme = "README.md"
+
+# Keep the published crate small: the logo is 78% of the tarball and crates.io
+# resolves README images against the repository anyway. Editor and OS metadata
+# have no business in a dependency.
+exclude = [
+    "image.png",
+    ".vscode/",
+    ".idea/",
+    "**/.DS_Store",
+]
 documentation = "https://docs.rs/menemen"
 repository = "https://github.com/behemehal/Menemen"
 

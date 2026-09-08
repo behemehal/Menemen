@@ -60,6 +60,36 @@ impl std::fmt::Debug for MultipartFormData {
 /// Sticking to alphanumerics keeps every generated boundary valid.
 const BOUNDARY_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
+/// Takes the final path segment, treating both `/` and `\` as separators
+/// regardless of host platform. Sending the caller's whole path would leak
+/// their local directory layout to the server.
+fn base_name(file_path: &str) -> String {
+    file_path
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|segment| !segment.is_empty())
+        .unwrap_or(file_path)
+        .to_string()
+}
+
+/// Escapes a value for a `Content-Disposition` quoted-string. Quotes and
+/// backslashes are escaped per RFC 7578, and CR/LF are dropped so a crafted
+/// field name or filename cannot inject extra headers into the part.
+fn escape_quoted(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+
+    for character in value.chars() {
+        match character {
+            '\r' | '\n' => {}
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            other => escaped.push(other),
+        }
+    }
+
+    escaped
+}
+
 impl MultipartFormData {
     /// Creates an empty multipart form-data builder with a random boundary.
     pub fn new() -> MultipartFormData {
@@ -91,7 +121,7 @@ impl MultipartFormData {
             .to_string();
 
         let file = fs::File::open(file_path)?;
-        let file_name = file_path.split('/').last().unwrap().to_string();
+        let file_name = base_name(file_path);
 
         let file = MultipartFile {
             file: Box::new(file),
@@ -144,8 +174,11 @@ impl MultipartFormData {
             match data {
                 MultipartFormValue::Stream(stream) => {
                     byte_buffer.extend_from_slice(
-                        format!("\r\nContent-Disposition: form-data; name=\"{}\";\r\n", name)
-                            .as_bytes(),
+                        format!(
+                            "\r\nContent-Disposition: form-data; name=\"{}\";\r\n",
+                            escape_quoted(name)
+                        )
+                        .as_bytes(),
                     );
                     byte_buffer.extend_from_slice(
                         "Content-Type: application/octet-stream\r\n\r\n".as_bytes(),
@@ -156,7 +189,7 @@ impl MultipartFormData {
                     byte_buffer.extend_from_slice(
                         format!(
                             "\r\nContent-Disposition: form-data; name=\"{}\"\r\n\r\n",
-                            name
+                            escape_quoted(name)
                         )
                         .as_bytes(),
                     );
@@ -166,7 +199,8 @@ impl MultipartFormData {
                     byte_buffer.extend_from_slice(
                         format!(
                             "\r\nContent-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\n",
-                            name, file.file_name
+                            escape_quoted(name),
+                            escape_quoted(&file.file_name)
                         )
                         .as_bytes(),
                     );

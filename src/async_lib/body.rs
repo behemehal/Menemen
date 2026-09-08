@@ -102,11 +102,17 @@ impl Into<Body> for Cursor<&'static str> {
 }
 
 #[cfg(feature = "multipart")]
-impl Into<MultipartFormData> for Body {
-    fn into(self) -> MultipartFormData {
-        match self.body {
-            BodyType::MultipartFormData(multipart_form_data) => multipart_form_data,
-            _ => panic!("Body is not MultipartFormData"),
+impl TryFrom<Body> for MultipartFormData {
+    type Error = Body;
+
+    /// Recovers the multipart builder from a body.
+    ///
+    /// Returns the body unchanged when it holds something else, rather than
+    /// panicking as the previous `Into` implementation did.
+    fn try_from(body: Body) -> Result<Self, Self::Error> {
+        match body.body {
+            BodyType::MultipartFormData(multipart_form_data) => Ok(multipart_form_data),
+            other => Err(Body { body: other }),
         }
     }
 }

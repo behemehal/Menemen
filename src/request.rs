@@ -1,7 +1,7 @@
 use crate::{body::Body, client::Client, error::RequestError, response::Response, url::Url};
 
 /// HTTP Header
-/// ##### [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers]
+/// See [MDN: HTTP headers](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers).
 #[derive(Debug, Clone)]
 pub struct Header {
     /// The name of the header
@@ -56,7 +56,7 @@ fn host_header_value(url: &Url) -> String {
 }
 
 /// List of RequestTypes
-/// #### https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods
+/// See [MDN: HTTP request methods](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestTypes {
     /// GET Method
@@ -91,7 +91,7 @@ impl RequestTypes {
 }
 
 /// ContentTypes
-/// #### https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
+/// See [MDN: MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types).
 #[derive(Clone, Debug)]
 pub enum ContentTypes {
     /// application/json
@@ -227,7 +227,7 @@ impl Request {
     /// ## Parameters
     /// * `timeout` - The timeout in milliseconds
     /// ## Returns
-    /// [`Request`] if the timeout set before the request sent else [`error::Error`]
+    /// [`Request`] if the timeout set before the request sent else [`RequestError`]
     /// ## Example
     /// ```
     /// use menemen::request::{Request, RequestTypes};
@@ -297,7 +297,7 @@ impl Request {
     /// * `key` - The name of the header
     /// * `value` - The value of the header
     /// ## Returns
-    /// [`Request`] if the header was set before the request sent else [`error::Error`]
+    /// [`Request`] if the header was set before the request sent else [`RequestError`]
     /// ## Example
     /// ```
     /// use menemen::request::{Request, RequestTypes};
@@ -343,7 +343,7 @@ impl Request {
 
     /// Send the request with non-blocking async
     /// ## Returns
-    /// [`Response`] if the request was sent successfully else [`error::RequestError`]
+    /// [`Response`] if the request was sent successfully else [`RequestError`]
     #[cfg(feature = "async")]
     pub async fn send(&mut self) -> Result<Response, RequestError> {
         if self.sent {
@@ -360,7 +360,7 @@ impl Request {
 
     /// Send the request with non-blocking async
     /// ## Returns
-    /// [`Response`] if the request was sent successfully else [`error::RequestError`]
+    /// [`Response`] if the request was sent successfully else [`RequestError`]
     #[cfg(not(feature = "async"))]
     pub fn send(&mut self) -> Result<Response, RequestError> {
         if self.sent {

@@ -39,6 +39,16 @@
   `application/x-www-form-urlencoded` rather than falling back to the default
 - Add the `HEAD`, `PATCH` and `OPTIONS` methods, and treat a HEAD response as
   bodyless so reads return EOF instead of consuming the next response
+- Send only the final path segment as a multipart filename. Splitting on `/`
+  alone meant Windows paths never split, so the caller's whole absolute path,
+  username included, was sent to the server in `Content-Disposition`
+- Escape quotes and drop CR/LF in multipart field names and filenames, so
+  neither can inject extra headers into a part
+- Replace the panicking `Into<MultipartFormData> for Body` with a `TryFrom`
+  that returns the body unchanged
+- Exclude the logo and editor metadata from the published crate, taking it from
+  848 KiB to 64 KiB compressed
+- Fix the unresolved intra-doc links and bare URLs shown on docs.rs
 - Add `Request::set_follow_redirects` to opt out of automatic redirects
 - CLI: implement shell completions, `--multipart`, `--no-follow` and
   `--color`, which were previously accepted but inert
