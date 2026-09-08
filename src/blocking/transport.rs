@@ -1,31 +1,39 @@
-use bufstream::BufStream;
+#[cfg(feature = "https")]
 use native_tls::TlsStream;
+
 use std::{
-    io::{Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::TcpStream,
 };
 
 /// This enum is a bridge for the different types of streams that can be used to communicate with the server.
+///
+/// Reads are buffered because header and chunk-size parsing is line-oriented.
+/// Writes go straight to the socket: a request is emitted as one head write plus
+/// at most one body write, so an extra write buffer would only add a copy.
 #[allow(missing_debug_implementations)]
 pub enum Transport {
     /// Ssl stream
-    Ssl(BufStream<TlsStream<TcpStream>>),
+    #[cfg(feature = "https")]
+    Ssl(BufReader<TlsStream<TcpStream>>),
     /// Tcp stream
-    Tcp(BufStream<TcpStream>),
+    Tcp(BufReader<TcpStream>),
 }
 
 impl Write for Transport {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            Transport::Ssl(socket) => socket.write(buf),
-            Transport::Tcp(socket) => socket.write(buf),
+            #[cfg(feature = "https")]
+            Transport::Ssl(socket) => socket.get_mut().write(buf),
+            Transport::Tcp(socket) => socket.get_mut().write(buf),
         }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            Transport::Ssl(socket) => socket.flush(),
-            Transport::Tcp(socket) => socket.flush(),
+            #[cfg(feature = "https")]
+            Transport::Ssl(socket) => socket.get_mut().flush(),
+            Transport::Tcp(socket) => socket.get_mut().flush(),
         }
     }
 }
@@ -33,15 +41,17 @@ impl Write for Transport {
 impl Read for Transport {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
+            #[cfg(feature = "https")]
             Transport::Ssl(socket) => socket.read(buf),
             Transport::Tcp(socket) => socket.read(buf),
         }
     }
 }
 
-impl std::io::BufRead for Transport {
+impl BufRead for Transport {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
         match self {
+            #[cfg(feature = "https")]
             Transport::Ssl(socket) => socket.fill_buf(),
             Transport::Tcp(socket) => socket.fill_buf(),
         }
@@ -49,6 +59,7 @@ impl std::io::BufRead for Transport {
 
     fn consume(&mut self, amt: usize) {
         match self {
+            #[cfg(feature = "https")]
             Transport::Ssl(socket) => socket.consume(amt),
             Transport::Tcp(socket) => socket.consume(amt),
         }

@@ -1,15 +1,45 @@
+//! Sends JSON from a local file in both blocking and async variants.
+
 use menemen::request::{ContentTypes, Request, RequestTypes};
-use std::{fs::File, io::Read};
 
-fn main() {
-    let mut request = Request::new("https://postman-echo.com/post", RequestTypes::POST).unwrap();
+#[cfg(not(feature = "async"))]
+use std::fs::File;
 
-    //Read file
-    let mut file = File::open("./examples/post.json").unwrap();
+#[cfg(feature = "async")]
+use tokio::fs::File;
+
+#[cfg(not(feature = "async"))]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create a new request.
+    let mut request = Request::new("https://postman-echo.com/post", RequestTypes::POST)?;
+
+    // Read a file and append it to the request body.
+    let file = File::open("./examples/post.json")?;
+    request.append_body(file.into());
+
+    // Set content type.
     request.content_type = ContentTypes::JSON;
-    let mut response = request.send_with_body(&mut file).unwrap();
-    let mut text_buffer = Vec::new();
-    response.stream.read_to_end(&mut text_buffer).unwrap();
-    println!("Text: {}", String::from_utf8_lossy(&text_buffer));
+
+    let mut response = request.send()?;
+
+    let text = response.text()?;
+    println!("Text: {}", text);
     println!("Response info: {:?}", response.response_info);
+    Ok(())
+}
+
+#[cfg(feature = "async")]
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut request = Request::new("https://postman-echo.com/post", RequestTypes::POST)?;
+
+    let file = File::open("./examples/post.json").await?;
+    request.content_type = ContentTypes::JSON;
+    request.append_body(file.into());
+
+    let mut response = request.send().await?;
+    let text = response.text().await?;
+    println!("Text: {}", text);
+    println!("Response info: {:?}", response.response_info);
+    Ok(())
 }

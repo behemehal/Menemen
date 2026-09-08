@@ -1,4 +1,4 @@
-use anyhow::{Context, Error};
+use crate::error::RequestError;
 
 /// QueryParam
 #[derive(Clone, Debug, PartialEq)]
@@ -28,7 +28,7 @@ impl Url {
     /// Builds a URL from a string
     /// * `url_string` - The URL string
     /// ## Returns
-    /// [`Url`] if the URL was successfully parsed else [`Error`]
+    /// [`Url`] if the URL was successfully parsed else [`RequestError::MalformedUrl`]
     /// ## Example
     /// ```rust
     /// use menemen::url::Url;
@@ -43,15 +43,31 @@ impl Url {
     /// assert_eq!(url.paths.len(), 1);
     /// assert_eq!(url.paths[0], "test".to_string());
     /// ```
-    pub fn build_from_string(url: String) -> Result<Url, Error> {
-        let mut new_url = url.clone();
-        let protocol = url
+    pub fn build_from_string(url: String) -> Result<Url, RequestError> {
+        // A fragment is client-side only and must never reach the server.
+        let url = match url.split_once('#') {
+            Some((before_fragment, _)) => before_fragment.to_string(),
+            None => url,
+        };
+
+        // Split the query off before host and path parsing. Otherwise a URL
+        // with a query but no path ("http://example.com?q=1") folds the query
+        // into the hostname.
+        let (authority_and_path, query_string) = match url.split_once('?') {
+            Some((before_query, query)) => (before_query.to_string(), Some(query.to_string())),
+            None => (url.clone(), None),
+        };
+
+        let protocol = authority_and_path
             .split("://")
             .collect::<Vec<&str>>()
             .first()
-            .with_context(|| "Failed to parse protocol")?
+            .ok_or(RequestError::MalformedUrl)?
             .to_string();
-        new_url = new_url.replace(&format!("{}://", protocol.as_str()), "");
+
+        let mut new_url =
+            authority_and_path.replace(&format!("{}://", protocol.as_str()), "");
+
         let (host, port) = {
             let _host = if new_url.contains("/") {
                 new_url.split("/").collect::<Vec<&str>>()[0].to_string()
@@ -73,47 +89,40 @@ impl Url {
             };
             let port = _port
                 .parse::<u16>()
-                .with_context(|| "Failed to parse port")?;
+                .map_err(|_| RequestError::MalformedUrl)?;
             (host, port)
         };
+
         new_url = format!(
             "/{}",
             new_url.split("/").collect::<Vec<&str>>()[1..].join("/")
         );
+
         let paths = if new_url.contains("/") && new_url != "/" {
             new_url.split("/").collect::<Vec<&str>>()[1..]
                 .iter()
-                .map(|s| {
-                    if s.contains("?") {
-                        s.to_string().split("?").collect::<Vec<&str>>()[0].to_string()
-                    } else {
-                        s.to_string()
-                    }
-                })
+                .map(|s| s.to_string())
                 .collect::<Vec<_>>()
         } else {
             vec![]
         };
-        let query_params = if paths.len() == 0 {
-            vec![]
-        } else if new_url.contains("?") {
-            new_url = new_url.split("?").collect::<Vec<&str>>()[1].to_string();
-            new_url
+
+        let query_params = match query_string {
+            Some(query) if !query.is_empty() => query
                 .split("&")
-                .map(|x| {
-                    let param = x.split("=").collect::<Vec<&str>>();
-                    QueryParam {
-                        name: param[0].to_string(),
-                        value: if param.len() == 1 {
-                            String::new()
-                        } else {
-                            param[1].to_string()
-                        },
-                    }
+                .filter(|pair| !pair.is_empty())
+                .map(|pair| match pair.split_once('=') {
+                    Some((name, value)) => QueryParam {
+                        name: name.to_string(),
+                        value: value.to_string(),
+                    },
+                    None => QueryParam {
+                        name: pair.to_string(),
+                        value: String::new(),
+                    },
                 })
-                .collect::<Vec<QueryParam>>()
-        } else {
-            Vec::new()
+                .collect::<Vec<QueryParam>>(),
+            _ => Vec::new(),
         };
 
         Ok(Url {

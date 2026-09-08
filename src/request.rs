@@ -1,15 +1,7 @@
-use crate::{error, response::Response, response::ResponseInfo, transport::Transport, url::Url};
-use anyhow::Context;
-use bufstream::BufStream;
-use native_tls::TlsConnector;
-use std::{
-    io::{Read, Write},
-    net::TcpStream,
-    time::Duration,
-};
+use crate::{body::Body, client::Client, error::RequestError, response::Response, url::Url};
 
 /// HTTP Header
-/// ##### [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers]
+/// See [MDN: HTTP headers](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers).
 #[derive(Debug, Clone)]
 pub struct Header {
     /// The name of the header
@@ -23,7 +15,7 @@ impl Header {
     /// ## Parameters
     /// * `line` - The raw http header response
     /// ## Returns
-    /// [`Header`] if the header was successfully parsed else [`error::Error`]
+    /// [`Header`] if the header was successfully parsed else [`RequestError::InvalidHeader`]
     /// ## Example
     /// ```
     /// use menemen::request::Header;
@@ -31,24 +23,41 @@ impl Header {
     /// assert_eq!(header.name.clone(), "Content-Type");
     /// assert_eq!(header.value, "text/html; charset=utf-8");
     /// ```
-    pub fn parse(line: &str) -> anyhow::Result<Header> {
+    pub fn parse(line: &str) -> Result<Header, RequestError> {
         if !line.contains(":") {
-            return Err(anyhow::anyhow!("Failed to parse response info"));
+            return Err(RequestError::InvalidHeader(line.to_string()));
         }
-        let parts = line.split(": ").collect::<Vec<_>>();
-        let name = parts[0].to_string();
-        let value = if parts.len() == 1 {
-            String::new()
-        } else {
-            parts[1].to_string()
-        };
+        let mut parts = line.splitn(2, ':');
+        let name = parts
+            .next()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        if name.is_empty() {
+            return Err(RequestError::InvalidHeader(line.to_string()));
+        }
+        let value = parts
+            .next()
+            .map(|s| s.trim_start().to_string())
+            .unwrap_or_default();
         Ok(Header { name, value })
     }
 }
 
+fn has_invalid_header_chars(value: &str) -> bool {
+    value.contains('\r') || value.contains('\n')
+}
+
+fn host_header_value(url: &Url) -> String {
+    if url.port == 443 || url.port == 80 {
+        url.host.clone()
+    } else {
+        format!("{}:{}", url.host, url.port)
+    }
+}
+
 /// List of RequestTypes
-/// #### https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods
-#[derive(Debug)]
+/// See [MDN: HTTP request methods](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestTypes {
     /// GET Method
     GET,
@@ -58,6 +67,12 @@ pub enum RequestTypes {
     PUT,
     /// DELETE Method
     DELETE,
+    /// HEAD Method
+    HEAD,
+    /// PATCH Method
+    PATCH,
+    /// OPTIONS Method
+    OPTIONS,
 }
 
 impl RequestTypes {
@@ -68,12 +83,15 @@ impl RequestTypes {
             RequestTypes::POST => "POST".to_string(),
             RequestTypes::PUT => "PUT".to_string(),
             RequestTypes::DELETE => "DELETE".to_string(),
+            RequestTypes::HEAD => "HEAD".to_string(),
+            RequestTypes::PATCH => "PATCH".to_string(),
+            RequestTypes::OPTIONS => "OPTIONS".to_string(),
         }
     }
 }
 
 /// ContentTypes
-/// #### https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
+/// See [MDN: MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types).
 #[derive(Clone, Debug)]
 pub enum ContentTypes {
     /// application/json
@@ -90,11 +108,15 @@ pub enum ContentTypes {
     Any,
     /// application/octet-stream
     OctetStream,
+    /// Form-Data
+    FormData,
+    /// Multipart-Form-Data
+    MultipartFormData,
 }
 
 impl Default for ContentTypes {
     fn default() -> Self {
-        ContentTypes::Any
+        ContentTypes::OctetStream
     }
 }
 
@@ -115,6 +137,8 @@ impl ContentTypes {
             ContentTypes::MP3 => "audio/mp3",
             ContentTypes::Any => "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             ContentTypes::OctetStream => "application/octet-stream",
+            ContentTypes::FormData => "application/x-www-form-urlencoded",
+            ContentTypes::MultipartFormData => "multipart/form-data",
         }
     }
 }
@@ -127,11 +151,14 @@ pub struct Request {
     request_type: RequestTypes,
     /// ContentType of the request [`ContentTypes`]
     pub content_type: ContentTypes,
+    /// Body of the request [`Option<Body>`]
+    pub(crate) body_to_send: Option<Body>,
     /// Headers of the request [`Vec<Header>`]
     headers: Vec<Header>,
     /// Timeout of the request [`u64`]
     timeout: u64,
-    redirect: bool,
+    /// Whether redirect responses are followed automatically
+    follow_redirects: bool,
     /// Is the request sent
     sent: bool,
 }
@@ -142,72 +169,39 @@ impl Request {
     /// * `url` - The url to send the request to
     /// * `request_type` - The type of request to send takes [`RequestTypes`]
     /// ## Returns
-    /// [`Request`] if the request was successfully created else [`error::Error`]
-    pub fn new(url: &str, request_type: RequestTypes) -> anyhow::Result<Request> {
-        let url = crate::url::Url::build_from_string(url.to_string())
-            .with_context(|| "Failed to parse url")?;
+    /// [`Request`] if the request was successfully created else [`RequestError`]
+    pub fn new(url: &str, request_type: RequestTypes) -> Result<Request, RequestError> {
+        let url = crate::url::Url::build_from_string(url.to_string())?;
         let headers = Vec::new();
         let mut request = Request {
             url: url.clone(),
             request_type,
             content_type: ContentTypes::default(),
             headers,
+            body_to_send: None,
             timeout: 5000,
-            redirect: true,
+            follow_redirects: true,
             sent: false,
         };
-        request.set_header(
-            "Host",
-            &format!(
-                "{}{}{}",
-                url.host,
-                if url.port == 443 || url.port == 80 {
-                    ""
-                } else {
-                    ":"
-                },
-                if url.port == 443 || url.port == 80 {
-                    "".to_string()
-                } else {
-                    url.port.to_string()
-                },
-            ),
-        );
+        request.set_header("Host", &host_header_value(&url));
         request.set_header("Connection", "close");
         request.set_header("Cache-Control", "max-age=0");
         request.set_header(
             "User-Agent",
             &format!("Menemen/{}", env!("CARGO_PKG_VERSION")),
         );
+        request.set_header("Accept", "*/*");
         Ok(request)
     }
 
     /// Builds the request body
-    fn build_request_body(&mut self) -> String {
-        self.set_header("Content-Type", &self.content_type.clone().get_type());
-        //{protocol}://{host}{port}
-        format!(
-            "{request_type} /{path}{queryParams} HTTP/1.1\r\n\
-            {headers}\r\n\r\n",
-            request_type = self.request_type.get_type(),
-            path = self.url.paths.join("/"),
-            queryParams = if self.url.query_params.is_empty() {
-                "".to_owned()
-            } else {
-                "?".to_owned() + &self.url.join_query_params()
-            },
-            headers = self
-                .headers
-                .iter()
-                .map(|x| format!("{}:{}", x.name, x.value))
-                .collect::<Vec<_>>()
-                .join("\r\n")
-        )
-    }
-
-    /// Builds the request body
-    fn build_post_request_body(&mut self) -> String {
-        self.set_header("Content-Type", &self.content_type.clone().get_type());
+    pub(crate) fn build_request_body(&mut self) -> String {
+        // Only a request that carries a body describes one. Sending
+        // Content-Type on a bodyless GET is meaningless and some servers
+        // reject it.
+        if self.body_to_send.is_some() && self.get_header("Content-Type").is_none() {
+            self.set_header("Content-Type", &self.content_type.clone().get_type());
+        }
 
         //{protocol}://{host}{port}
         format!(
@@ -233,7 +227,7 @@ impl Request {
     /// ## Parameters
     /// * `timeout` - The timeout in milliseconds
     /// ## Returns
-    /// [`Request`] if the timeout set before the request sent else [`error::Error`]
+    /// [`Request`] if the timeout set before the request sent else [`RequestError`]
     /// ## Example
     /// ```
     /// use menemen::request::{Request, RequestTypes};
@@ -241,13 +235,45 @@ impl Request {
     /// let mut request = Request::new("https://behemehal.org/test", RequestTypes::GET).unwrap();
     /// request.set_timeout(5000);
     /// ```
-    pub fn set_timeout(&mut self, timeout: u64) -> Option<error::RequestErrors> {
+    pub fn set_timeout(&mut self, timeout: u64) -> Option<RequestError> {
         if self.sent {
-            Some(error::RequestErrors::CantSetHeadersAfterRequestSent)
+            Some(RequestError::CantSetHeadersAfterRequestSent)
         } else {
             self.timeout = timeout;
             None
         }
+    }
+
+    /// Controls whether `302`, `303`, `307` and `308` responses are followed
+    /// automatically. Enabled by default.
+    /// ## Parameters
+    /// * `follow` - `false` to return the redirect response as-is
+    /// ## Example
+    /// ```
+    /// use menemen::request::{Request, RequestTypes};
+    /// let mut request = Request::new("http://example.com", RequestTypes::GET).unwrap();
+    /// request.set_follow_redirects(false);
+    /// ```
+    pub fn set_follow_redirects(&mut self, follow: bool) -> &mut Self {
+        self.follow_redirects = follow;
+        self
+    }
+
+    pub(crate) fn follow_redirects(&self) -> bool {
+        self.follow_redirects
+    }
+
+    pub(crate) fn request_type(&self) -> RequestTypes {
+        self.request_type
+    }
+
+    pub(crate) fn timeout(&self) -> u64 {
+        self.timeout
+    }
+
+    pub(crate) fn set_url(&mut self, url: Url) {
+        self.url = url.clone();
+        let _ = self.set_header("Host", &host_header_value(&url));
     }
 
     /// Get headers of the request
@@ -271,7 +297,7 @@ impl Request {
     /// * `key` - The name of the header
     /// * `value` - The value of the header
     /// ## Returns
-    /// [`Request`] if the header was set before the request sent else [`error::Error`]
+    /// [`Request`] if the header was set before the request sent else [`RequestError`]
     /// ## Example
     /// ```
     /// use menemen::request::{Request, RequestTypes};
@@ -279,13 +305,21 @@ impl Request {
     /// let mut request = Request::new("https://behemehal.org/test", RequestTypes::GET).unwrap();
     /// request.set_header("Host", "behemehal.org");
     /// ```
-    pub fn set_header(&mut self, key: &str, value: &str) -> Option<error::RequestErrors> {
+    pub fn set_header(&mut self, key: &str, value: &str) -> Option<RequestError> {
         if self.sent {
-            Some(error::RequestErrors::CantSetHeadersAfterRequestSent)
+            Some(RequestError::CantSetHeadersAfterRequestSent)
+        } else if key.is_empty()
+            || key.contains(':')
+            || has_invalid_header_chars(key)
+            || has_invalid_header_chars(value)
+        {
+            Some(RequestError::ConnectionError(
+                "Invalid header name/value".to_string(),
+            ))
         } else {
             let q = self.headers.iter_mut().find(|h| h.name == key);
             match q {
-                Some(mut header) => {
+                Some(header) => {
                     header.value = value.to_string();
                 }
                 None => {
@@ -299,247 +333,50 @@ impl Request {
         }
     }
 
-    /// Send the request with body stream [NotImplemented]
-    pub fn send_with_body(
-        &mut self,
-        body: &mut dyn Read,
-    ) -> Result<Response, error::RequestErrors> {
+    /// Append body to the request
+    /// ## Parameters
+    /// * `body` - The body to send with the request
+    pub fn append_body(&mut self, body: Body) -> &mut Self {
+        self.body_to_send = Some(body);
+        self
+    }
+
+    /// Send the request with non-blocking async
+    /// ## Returns
+    /// [`Response`] if the request was sent successfully else [`RequestError`]
+    #[cfg(feature = "async")]
+    pub async fn send(&mut self) -> Result<Response, RequestError> {
         if self.sent {
-            return Err(error::RequestErrors::AlreadySent);
+            return Err(RequestError::AlreadySent);
         } else {
-            let socket_addr = (self.url.host.clone(), self.url.port);
-
-            match TcpStream::connect(socket_addr) {
-                Ok(mut _tcp_stream) => {
-                    _tcp_stream
-                        .set_read_timeout(Some(Duration::from_millis(self.timeout)))
-                        .unwrap();
-
-                    let mut tcp_stream = if self.url.is_https {
-                        Transport::Ssl(BufStream::new(
-                            TlsConnector::new()
-                                .unwrap()
-                                .connect(&self.url.host, _tcp_stream)
-                                .unwrap(),
-                        ))
-                    } else {
-                        Transport::Tcp(BufStream::new(_tcp_stream))
-                    };
-                    let mut cbody = String::new();
-                    body.read_to_string(&mut cbody).unwrap();
-                    self.set_header("content-length", &cbody.len().to_string());
-                    let request_body = self.build_post_request_body();
-                    self.sent = true;
-                    tcp_stream.write(request_body.as_bytes()).unwrap();
-                    tcp_stream.write(cbody.as_bytes()).unwrap();
-                    tcp_stream.write(b"\r\n").unwrap();
-                    tcp_stream.flush().unwrap();
-
-                    let mut lines = vec![String::new()];
-                    let mut new_line = false;
-                    let mut connection_info_collected = false;
-                    let mut connection_info = ResponseInfo::default();
-                    let mut headers: Vec<Header> = Vec::new();
-                    let mut last_char = '\0';
-                    loop {
-                        let mut buffer = [0; 1];
-                        tcp_stream.read(&mut buffer).unwrap();
-                        //Convert byte to char
-                        let cchar = char::from(buffer[0]);
-                        //If its a line break
-                        if last_char == '\r' && cchar == '\n' {
-                            //If newline used again collect body
-                            if new_line {
-                                for line in &lines {
-                                    match Header::parse(line) {
-                                        Ok(header_line) => {
-                                            headers.push(header_line);
-                                        }
-                                        Err(_) => {
-                                            return Err(error::RequestErrors::ConnectionError(
-                                                "Malformed response header".to_string(),
-                                            ));
-                                        }
-                                    }
-                                }
-                                return Ok(Response {
-                                    response_info: connection_info,
-                                    headers,
-                                    stream: tcp_stream,
-                                });
-                            } else {
-                                if !connection_info_collected {
-                                    if let Ok(con_info) =
-                                        ResponseInfo::parse_response_info(&lines[0])
-                                    {
-                                        connection_info = con_info;
-                                        connection_info_collected = true;
-                                        lines = Vec::new();
-                                    } else {
-                                        return Err(error::RequestErrors::ConnectionError(
-                                            "Malformed response".to_string(),
-                                        ));
-                                    }
-                                }
-                                new_line = true;
-                            }
-                        } else {
-                            //If coming line is \r dont reset 'new_line'
-                            if cchar != '\r' {
-                                if new_line {
-                                    lines.push(String::new());
-                                }
-                                let line_len = lines.len();
-                                lines[line_len - 1] += &cchar.to_string();
-                                new_line = false;
-                            }
-                        }
-                        last_char = cchar;
-                    }
-                }
-                Err(e) => Err(error::RequestErrors::ConnectionError(e.to_string())),
-            }
+            let client = Client::new(self.url.clone());
+            let response = client
+                .send_request(self.url.is_https && cfg!(feature = "https"), self)
+                .await?;
+            self.sent = true;
+            Ok(response)
         }
     }
 
-    /// Send the request without body stream
+    /// Send the request with non-blocking async
     /// ## Returns
-    /// [`Response`] if the request was sent successfully else [`error::RequestErrors`]
-    pub fn send(&mut self) -> Result<Response, error::RequestErrors> {
+    /// [`Response`] if the request was sent successfully else [`RequestError`]
+    #[cfg(not(feature = "async"))]
+    pub fn send(&mut self) -> Result<Response, RequestError> {
         if self.sent {
-            return Err(error::RequestErrors::AlreadySent);
+            return Err(RequestError::AlreadySent);
         } else {
-            let socket_addr = (self.url.host.clone(), self.url.port);
+            let client = Client::new(self.url.clone());
 
-            match TcpStream::connect(socket_addr) {
-                Ok(mut _tcp_stream) => {
-                    _tcp_stream
-                        .set_read_timeout(Some(Duration::from_millis(self.timeout)))
-                        .unwrap();
+            let can_proceed = cfg!(feature = "https") || cfg!(feature = "danger-transport-no-tls");
 
-                    let mut tcp_stream = if self.url.is_https {
-                        Transport::Ssl(BufStream::new(
-                            TlsConnector::new()
-                                .unwrap()
-                                .connect(&self.url.host, _tcp_stream)
-                                .unwrap(),
-                        ))
-                    } else {
-                        Transport::Tcp(BufStream::new(_tcp_stream))
-                    };
-
-                    let request_body = self.build_request_body();
-                    self.sent = true;
-                    tcp_stream.write(request_body.as_bytes()).unwrap();
-                    tcp_stream.flush().unwrap();
-
-                    let mut lines = vec![String::new()];
-                    let mut new_line = false;
-                    let mut connection_info_collected = false;
-                    let mut connection_info = ResponseInfo::default();
-                    let mut headers: Vec<Header> = Vec::new();
-                    let mut last_char = '\0';
-                    loop {
-                        let mut buffer = [0; 1];
-                        tcp_stream.read(&mut buffer).unwrap();
-                        //Convert byte to char
-                        let cchar = char::from(buffer[0]);
-                        //If its a line break
-                        if last_char == '\r' && cchar == '\n' {
-                            //If newline used again collect body
-                            if new_line {
-                                for line in &lines {
-                                    match Header::parse(line) {
-                                        Ok(header_line) => {
-                                            headers.push(header_line);
-                                        }
-                                        Err(_) => {
-                                            return Err(error::RequestErrors::ConnectionError(
-                                                "Malformed response header".to_string(),
-                                            ));
-                                        }
-                                    }
-                                }
-                                let redirected_location =
-                                    headers.iter().find(|x| x.name == "Location");
-                                if self.redirect
-                                    && redirected_location.is_some()
-                                    && (connection_info.status_code == 302
-                                        || connection_info.status_code == 303
-                                        || connection_info.status_code == 307
-                                        || connection_info.status_code == 308)
-                                {
-                                    return match Url::build_from_string(
-                                        redirected_location.unwrap().value.clone(),
-                                    ) {
-                                        Ok(new_url) => {
-                                            self.url = new_url.clone();
-                                            self.sent = false;
-                                            self.set_header(
-                                                "Host",
-                                                &format!(
-                                                    "{}{}{}",
-                                                    new_url.host,
-                                                    if new_url.port == 443 || new_url.port == 80 {
-                                                        ""
-                                                    } else {
-                                                        ":"
-                                                    },
-                                                    if new_url.port == 443 || new_url.port == 80 {
-                                                        "".to_string()
-                                                    } else {
-                                                        new_url.port.to_string()
-                                                    },
-                                                ),
-                                            );
-                                            self.send()
-                                        }
-                                        Err(_) => {
-                                            Err(error::RequestErrors::ConnectionError(format!(
-                                                "Redirect url is not correct '{}'",
-                                                redirected_location.unwrap().value.clone()
-                                            )))
-                                        }
-                                    };
-                                } else {
-                                    return Ok(Response {
-                                        response_info: connection_info,
-                                        headers,
-                                        stream: tcp_stream,
-                                    });
-                                }
-                            } else {
-                                if !connection_info_collected {
-                                    if let Ok(con_info) =
-                                        ResponseInfo::parse_response_info(&lines[0])
-                                    {
-                                        connection_info = con_info;
-                                        connection_info_collected = true;
-                                        lines = Vec::new();
-                                    } else {
-                                        return Err(error::RequestErrors::ConnectionError(
-                                            "Malformed response".to_string(),
-                                        ));
-                                    }
-                                }
-                                new_line = true;
-                            }
-                        } else {
-                            //If coming line is \r dont reset 'new_line'
-                            if cchar != '\r' {
-                                if new_line {
-                                    lines.push(String::new());
-                                }
-                                let line_len = lines.len();
-                                lines[line_len - 1] += &cchar.to_string();
-                                new_line = false;
-                            }
-                        }
-                        last_char = cchar;
-                    }
-                }
-                Err(e) => Err(error::RequestErrors::ConnectionError(e.to_string())),
+            if self.url.is_https && !can_proceed {
+                return Err(RequestError::TlsNotEnabled);
             }
+
+            let response = client.send_request(self.url.is_https, self)?;
+            self.sent = true;
+            Ok(response)
         }
     }
 }

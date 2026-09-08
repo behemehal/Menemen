@@ -1,23 +1,36 @@
-use libflate::gzip::Decoder;
+//! Requests a gzip-encoded response and decodes it via `response.text()`.
+
 use menemen::request::{Request, RequestTypes};
-use std::io::Read;
 
-fn main() {
-    let mut request = Request::new("http://behemehal.org", RequestTypes::GET).unwrap();
-    request.set_header(&"Accept-Encoding", &"gzip");
+#[cfg(not(feature = "async"))]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut request = Request::new("http://behemehal.org", RequestTypes::GET)?;
+    request.set_header("Accept-Encoding", "gzip");
 
-    let mut response = request.send().unwrap();
+    let mut response = request.send()?;
 
     println!("Response info: {:?}", response.response_info);
     println!("Response headers: {:?}", response.headers);
 
-    // Pipe response stream through gzip decoder
-    let mut decoder = Decoder::new(&mut response.stream).unwrap();
+    let text = response.text()?;
+    println!("Text: {}", text);
 
-    let mut text_buffer = Vec::new();
+    Ok(())
+}
 
-    // Read decoded response into text buffer
-    decoder.read_to_end(&mut text_buffer).unwrap();
+#[cfg(feature = "async")]
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut request = Request::new("http://behemehal.org", RequestTypes::GET)?;
+    request.set_header("Accept-Encoding", "gzip");
 
-    println!("Text: {}", String::from_utf8_lossy(&text_buffer));
+    let mut response = request.send().await?;
+
+    println!("Response info: {:?}", response.response_info);
+    println!("Response headers: {:?}", response.headers);
+
+    let text = response.text().await?;
+    println!("Text: {}", text);
+
+    Ok(())
 }

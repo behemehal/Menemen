@@ -1,20 +1,19 @@
-//! Downloads a file with progress output using the blocking client.
+//! Downloads a file with progress output using the async client.
 
-#[cfg(not(feature = "async"))]
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
-#[cfg(not(feature = "async"))]
 use menemen::prelude::*;
-#[cfg(not(feature = "async"))]
 use std::{
     cmp::min,
-    fs::File,
-    io::{Read, Write},
+    fmt::Write,
     panic,
     time::{Duration, Instant},
 };
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 
 // Convert speed to string in Kbps or Mbps
-#[cfg(not(feature = "async"))]
 fn speed_to_string(speed_kbps: f64) -> String {
     if speed_kbps < 1024.0 {
         format!("{:.2} Kbps", speed_kbps)
@@ -23,16 +22,17 @@ fn speed_to_string(speed_kbps: f64) -> String {
     }
 }
 
-#[cfg(not(feature = "async"))]
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[cfg(feature = "async")]
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut request = Request::new(
         "http://ipv4.download.thinkbroadband.com/1GB.zip",
         RequestTypes::GET,
     )?;
 
-    let mut response = request.send()?;
+    let mut response = request.send().await?;
 
-    let mut file = File::create("./20MB.zip")?;
+    let mut file = File::create("./20MB.zip").await?;
     let mut last_instant = Instant::now();
     let mut collected_byte_len = 0;
     let mut stream_read_len = 0;
@@ -48,13 +48,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pb = ProgressBar::new(content_len as u64);
     pb.set_style(ProgressStyle::with_template("{spinner:.green} {msg} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-    .unwrap()
-    .with_key("eta", |state: &ProgressState, w: &mut dyn std::fmt::Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
-    .progress_chars("#>-"));
+        .unwrap()
+        .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
+        .progress_chars("#>-"));
 
     let mut buffer = [0; 8192 * 2]; // Buffer of 8KB
     loop {
-        match response.stream.read(&mut buffer) {
+        match response.stream.read(&mut buffer).await {
             Ok(read_bytes) => {
                 if read_bytes == 0 {
                     break;
@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "{spinner:.green} Downloading without content length [{elapsed_precise}] (Downloaded {bytes}, {bytes_per_sec})",
                             )
                             .unwrap()
-                            .with_key("eta", |state: &ProgressState, w: &mut dyn std::fmt::Write| {
+                            .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
                                 write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
                             })
                             .progress_chars("#>-"),
@@ -92,18 +92,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                file.write_all(&buffer[..read_bytes]).unwrap();
+                file.write_all(&buffer[..read_bytes]).await?;
             }
             Err(e) => {
                 panic!("Error reading stream: {}", e);
             }
         };
     }
-    pb.finish_with_message("Downloaded");
+    pb.finish_with_message("Download complete");
     Ok(())
 }
 
-#[cfg(feature = "async")]
+#[cfg(not(feature = "async"))]
 fn main() {
-    println!("This example does not support 'async' feature.");
+    println!("Please enable the 'async' feature to run this example.");
 }
