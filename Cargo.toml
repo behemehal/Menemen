@@ -5,7 +5,7 @@ authors = ["Behemehal", "Ahmetcan Aksu"]
 edition = "2021"
 description = "Menemen is a lightweight streaming HTTP/HTTPS client for Rust with both blocking and async modes."
 categories = ["network-programming"]
-keywords = ["network", "http", "stream", "async", "blocking", "client"]
+keywords = ["http", "stream", "async", "blocking", "client"]
 license = "GPL-2.0"
 readme = "README.md"
 
