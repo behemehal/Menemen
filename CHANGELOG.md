@@ -18,7 +18,16 @@
   `ResponseInfo::parse_response_info`), with new `InvalidHeader` and
   `InvalidResponse` variants
 - Fix gzip decoding in async mode
+- Fix an empty chunked body decoding as an error instead of an empty body,
+  and stop the blocking chunked reader spinning on a truncated body
+- Generate multipart boundaries from an alphanumeric alphabet so they stay
+  valid per RFC 2046
 - Fix `blocking::MultipartFormData::add_file` being declared `async`, which made
   it uncallable without an executor
 - Drop the `anyhow`, `bufstream`, `futures` and `clap_complete` dependencies
-- Add `CLI.md`
+- Add `Request::set_follow_redirects` to opt out of automatic redirects
+- CLI: implement shell completions, `--multipart`, `--no-follow` and
+  `--color`, which were previously accepted but inert
+- Add decoder, error and boundary test suites; the test suite now passes in
+  async mode as well as blocking
+- Add `CLI.md` and a bundled chunked demo server for `examples/chunked.rs`
