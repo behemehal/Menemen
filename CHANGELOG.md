@@ -27,6 +27,9 @@
 - Drop the `anyhow`, `bufstream` and `futures` dependencies
 - Percent-encode form keys and values, and decode them in `FormData::from_str`;
   an unescaped `&` or `=` in a value previously split one field into several
+- Fix `Read for FormData` never reporting EOF: it rebuilt the payload on every
+  call and restarted from the beginning, so `read_to_end` looped forever and
+  grew until it exhausted memory. The payload is now encoded once and streamed
 - Strip the URL fragment, which was being sent to the server as part of the path
 - Keep the query string of a host-only URL such as `http://example.com?q=1`,
   which was previously folded into the hostname and then dropped

@@ -8,6 +8,11 @@ use std::thread;
 /// Serves `raw` verbatim to exactly one client, then closes the connection.
 /// Returns the port it bound to.
 fn serve_once(raw: &'static [u8]) -> u16 {
+    serve_bytes(raw.to_vec())
+}
+
+/// [`serve_once`] for a response assembled at runtime.
+fn serve_bytes(raw: Vec<u8>) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
     let port = listener.local_addr().expect("local_addr").port();
 
@@ -16,7 +21,7 @@ fn serve_once(raw: &'static [u8]) -> u16 {
             // Drain the request head so the client's write completes.
             let mut scratch = [0u8; 8192];
             let _ = socket.read(&mut scratch);
-            let _ = socket.write_all(raw);
+            let _ = socket.write_all(&raw);
             let _ = socket.flush();
         }
     });
@@ -49,6 +54,40 @@ const CONTENT_LENGTH: &[u8] =
 
 const NOT_FOUND_CHUNKED: &[u8] =
     b"HTTP/1.1 404 Not Found\r\nTransfer-Encoding: chunked\r\n\r\n9\r\nnot here!\r\n0\r\n\r\n";
+
+/// Announces a 10-byte chunk, sends 4 bytes, then closes.
+const TRUNCATED_CHUNK: &[u8] =
+    b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\na\r\nabcd";
+
+/// gzip of "hello gzip from menemen".
+#[cfg(feature = "gzip")]
+const GZIP_BODY: &[u8] = &[
+    0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x57,
+    0x48, 0xaf, 0xca, 0x2c, 0x50, 0x48, 0x2b, 0xca, 0xcf, 0x55, 0xc8, 0x4d, 0xcd, 0x4b, 0xcd, 0x4d,
+    0xcd, 0x03, 0x00, 0x0f, 0x2f, 0x6e, 0xcb, 0x17, 0x00, 0x00, 0x00,
+];
+
+#[cfg(feature = "gzip")]
+fn gzip_response() -> Vec<u8> {
+    let mut response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+        GZIP_BODY.len()
+    )
+    .into_bytes();
+    response.extend_from_slice(GZIP_BODY);
+    response
+}
+
+/// Same payload, delivered with chunked framing instead of Content-Length.
+#[cfg(feature = "gzip")]
+fn gzip_chunked_response() -> Vec<u8> {
+    let mut response =
+        b"HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec();
+    response.extend_from_slice(format!("{:x}\r\n", GZIP_BODY.len()).as_bytes());
+    response.extend_from_slice(GZIP_BODY);
+    response.extend_from_slice(b"\r\n0\r\n\r\n");
+    response
+}
 
 #[cfg(not(feature = "async"))]
 mod blocking_decoder {
@@ -114,6 +153,55 @@ mod blocking_decoder {
         let mut buffer = Vec::new();
         response.read_to_end(&mut buffer).expect("read_to_end");
         assert_eq!(String::from_utf8(buffer).expect("utf8"), "Hello, World!");
+    }
+
+    /// Regression: a chunk that announces more bytes than the server delivers
+    /// used to spin forever, because a zero-length read never advanced the
+    /// fill counter. Run on a worker thread so a regression fails on the
+    /// timeout rather than hanging the whole suite.
+    #[test]
+    fn truncated_chunk_errors_instead_of_spinning() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let port = serve_once(TRUNCATED_CHUNK);
+        let (sender, receiver) = mpsc::channel();
+
+        thread::spawn(move || {
+            let outcome = Request::new(&url_for(port), RequestTypes::GET)
+                .expect("build request")
+                .send()
+                .and_then(|mut response| response.text());
+            let _ = sender.send(outcome.is_err());
+        });
+
+        match receiver.recv_timeout(Duration::from_secs(10)) {
+            Ok(errored) => assert!(
+                errored,
+                "a truncated chunked body should surface an error, not succeed"
+            ),
+            Err(_) => panic!("timed out: the chunked reader is spinning on a truncated body"),
+        }
+    }
+
+    #[cfg(feature = "gzip")]
+    #[test]
+    fn gzip_body_is_decoded() {
+        let mut response = get(serve_bytes(gzip_response()));
+        assert_eq!(
+            response.text().expect("decode gzip"),
+            "hello gzip from menemen"
+        );
+    }
+
+    #[cfg(feature = "gzip")]
+    #[test]
+    fn gzip_over_chunked_is_decoded() {
+        let mut response = get(serve_bytes(gzip_chunked_response()));
+        assert_eq!(
+            response.text().expect("decode chunked gzip"),
+            "hello gzip from menemen"
+        );
     }
 }
 
@@ -182,5 +270,36 @@ mod async_decoder {
         let mut buffer = Vec::new();
         response.read_to_end(&mut buffer).await.expect("read_to_end");
         assert_eq!(String::from_utf8(buffer).expect("utf8"), "Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn truncated_chunk_is_an_error() {
+        let mut response = get(serve_once(TRUNCATED_CHUNK)).await;
+        assert!(
+            response.text().await.is_err(),
+            "a truncated chunked body should surface an error"
+        );
+    }
+
+    /// Regression: async gzip decoding never compiled, so this path was
+    /// entirely unexercised.
+    #[cfg(feature = "gzip")]
+    #[tokio::test]
+    async fn gzip_body_is_decoded() {
+        let mut response = get(serve_bytes(gzip_response())).await;
+        assert_eq!(
+            response.text().await.expect("decode gzip"),
+            "hello gzip from menemen"
+        );
+    }
+
+    #[cfg(feature = "gzip")]
+    #[tokio::test]
+    async fn gzip_over_chunked_is_decoded() {
+        let mut response = get(serve_bytes(gzip_chunked_response())).await;
+        assert_eq!(
+            response.text().await.expect("decode chunked gzip"),
+            "hello gzip from menemen"
+        );
     }
 }

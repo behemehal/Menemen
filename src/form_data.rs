@@ -1,7 +1,10 @@
 use core::fmt;
 use core::fmt::Debug;
 use std::{
-    collections::HashMap, fmt::Formatter, io::Read, ops::{Index, IndexMut}
+    collections::HashMap,
+    fmt::Formatter,
+    io::{Cursor, Read},
+    ops::{Index, IndexMut},
 };
 
 /// URL-encoded form data container.
@@ -11,6 +14,10 @@ use std::{
 pub struct FormData {
     /// Ordered key/value pairs in the form body.
     pub form_data: Vec<(String, String)>,
+    /// Payload snapshot the `Read` impl streams from, encoded on first read.
+    /// Encoding per call would be quadratic in the payload size, and without
+    /// any cursor the impl never reports EOF at all.
+    read_buffer: Option<Cursor<Vec<u8>>>,
 }
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
@@ -80,12 +87,16 @@ impl FormData {
     pub fn new() -> Self {
         Self {
             form_data: Vec::new(),
+            read_buffer: None,
         }
     }
 
     /// Builds a form-data collection from a vector of pairs.
     pub fn from_map(map: Vec<(String, String)>) -> Self {
-        Self { form_data: map }
+        Self {
+            form_data: map,
+            read_buffer: None,
+        }
     }
 
     /// Parses a URL-encoded form-data string, percent-decoding keys and values.
@@ -94,7 +105,10 @@ impl FormData {
     pub fn from_str(data: &str) -> Self {
         let mut form_data = Vec::new();
         if data.is_empty() {
-            return Self { form_data };
+            return Self {
+                form_data,
+                read_buffer: None,
+            };
         }
 
         for pair in data.split('&') {
@@ -110,16 +124,21 @@ impl FormData {
             let value = split.next().unwrap_or("");
             form_data.push((decode_component(key), decode_component(value)));
         }
-        Self { form_data }
+        Self {
+            form_data,
+            read_buffer: None,
+        }
     }
 
     /// Appends a new key/value pair.
     pub fn add(&mut self, key: &str, value: &str) {
+        self.read_buffer = None;
         self.form_data.push((key.to_string(), value.to_string()));
     }
 
     /// Updates the first matching key or appends it if not present.
     pub fn set(&mut self, key: &str, value: &str) {
+        self.read_buffer = None;
         let mut found = false;
         for pair in self.form_data.iter_mut() {
             if pair.0 == key {
@@ -135,6 +154,7 @@ impl FormData {
 
     /// Removes all pairs matching `key`.
     pub fn remove(&mut self, key: &str) {
+        self.read_buffer = None;
         self.form_data.retain(|pair| pair.0 != key);
     }
 
@@ -175,7 +195,10 @@ impl IndexMut<usize> for FormData {
 
 impl From<Vec<(String, String)>> for FormData {
     fn from(map: Vec<(String, String)>) -> Self {
-        Self { form_data: map }
+        Self {
+            form_data: map,
+            read_buffer: None,
+        }
     }
 }
 
@@ -192,6 +215,7 @@ impl From<Vec<(&str, &str)>> for FormData {
                 .iter()
                 .map(|(key, value)| (key.to_string(), value.to_string()))
                 .collect(),
+            read_buffer: None,
         }
     }
 }
@@ -200,6 +224,7 @@ impl From<HashMap<String, String>> for FormData {
     fn from(map: HashMap<String, String>) -> Self {
         Self {
             form_data: map.into_iter().collect(),
+            read_buffer: None,
         }
     }
 }
@@ -218,6 +243,14 @@ impl Debug for FormData {
 
 impl Read for FormData {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-        self.build().as_bytes().read(buf)
+        if self.read_buffer.is_none() {
+            let payload = self.build().into_bytes();
+            self.read_buffer = Some(Cursor::new(payload));
+        }
+
+        match self.read_buffer.as_mut() {
+            Some(cursor) => cursor.read(buf),
+            None => Ok(0),
+        }
     }
 }

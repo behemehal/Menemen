@@ -47,6 +47,35 @@ fn serve_and_capture(response: &'static [u8]) -> (u16, thread::JoinHandle<String
     (port, handle)
 }
 
+/// Serves each response in turn, one per connection, so a redirect chain can be
+/// exercised. The client opens a fresh connection per request because it sends
+/// `Connection: close`.
+fn serve_sequence(responses: Vec<&'static [u8]>) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+    let port = listener.local_addr().expect("local_addr").port();
+
+    thread::spawn(move || {
+        for response in responses {
+            match listener.accept() {
+                Ok((mut socket, _)) => {
+                    let mut scratch = [0u8; 8192];
+                    let _ = socket.read(&mut scratch);
+                    let _ = socket.write_all(response);
+                    let _ = socket.flush();
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    port
+}
+
+const REDIRECT_RESPONSE: &[u8] =
+    b"HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\n\r\n";
+
+const FINAL_RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nfinal";
+
 fn find_head_end(buffer: &[u8]) -> Option<usize> {
     buffer
         .windows(4)
@@ -241,6 +270,45 @@ mod blocking_wire {
         }
     }
 
+    /// Redirects are followed by default, and a relative `Location` keeps the
+    /// original port.
+    #[test]
+    fn redirects_are_followed_by_default() {
+        let port = serve_sequence(vec![REDIRECT_RESPONSE, FINAL_RESPONSE]);
+        let url = format!("http://127.0.0.1:{}/start", port);
+
+        let mut request = Request::new(&url, RequestTypes::GET).expect("build request");
+        let mut response = request.send().expect("send");
+
+        assert_eq!(response.response_info.status_code, 200);
+        assert_eq!(response.text().expect("decode"), "final");
+    }
+
+    /// `set_follow_redirects(false)` must hand back the redirect itself.
+    #[test]
+    fn follow_redirects_can_be_disabled() {
+        let port = serve_sequence(vec![REDIRECT_RESPONSE, FINAL_RESPONSE]);
+        let url = format!("http://127.0.0.1:{}/start", port);
+
+        let mut request = Request::new(&url, RequestTypes::GET).expect("build request");
+        request.set_follow_redirects(false);
+        let response = request.send().expect("send");
+
+        assert_eq!(response.response_info.status_code, 302);
+        assert_eq!(
+            header_value(
+                &response
+                    .headers
+                    .iter()
+                    .map(|h| format!("{}: {}", h.name, h.value))
+                    .collect::<Vec<String>>(),
+                "Location"
+            )
+            .as_deref(),
+            Some("/final")
+        );
+    }
+
     /// A HEAD response has no body even though it advertises Content-Length,
     /// so reading it must return EOF rather than blocking.
     #[test]
@@ -319,6 +387,30 @@ mod async_wire {
 
         let raw = handle.join().expect("capture thread");
         assert_eq!(body_of(&raw), "note=a%26b%3Dc&msg=hello+world");
+    }
+
+    #[tokio::test]
+    async fn redirects_are_followed_by_default() {
+        let port = serve_sequence(vec![REDIRECT_RESPONSE, FINAL_RESPONSE]);
+        let url = format!("http://127.0.0.1:{}/start", port);
+
+        let mut request = Request::new(&url, RequestTypes::GET).expect("build request");
+        let mut response = request.send().await.expect("send");
+
+        assert_eq!(response.response_info.status_code, 200);
+        assert_eq!(response.text().await.expect("decode"), "final");
+    }
+
+    #[tokio::test]
+    async fn follow_redirects_can_be_disabled() {
+        let port = serve_sequence(vec![REDIRECT_RESPONSE, FINAL_RESPONSE]);
+        let url = format!("http://127.0.0.1:{}/start", port);
+
+        let mut request = Request::new(&url, RequestTypes::GET).expect("build request");
+        request.set_follow_redirects(false);
+        let response = request.send().await.expect("send");
+
+        assert_eq!(response.response_info.status_code, 302);
     }
 
     #[tokio::test]
