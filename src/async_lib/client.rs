@@ -67,7 +67,7 @@ impl Client {
 
     /// Connect to the server
     /// ## Returns
-    /// [`anyhow::Result`] with [`TcpStream`] if the connection was successful else [`anyhow::Error`]
+    /// [`Result`] with [`TcpStream`] if the connection was successful else [`RequestError`]
     /// ## Note
     /// This function is only available when the `async` feature is enabled
     pub async fn connect(&self, timeout_ms: u64) -> Result<TcpStream, RequestError> {
@@ -83,7 +83,7 @@ impl Client {
     /// * `request` - The request to send [`Request`]
     /// * `tls` - Whether to use TLS [`bool`]
     /// ## Returns
-    /// [`anyhow::Result`] with [`Response`] if the request was successful else [`anyhow::Error`]
+    /// [`Result`] with [`Response`] if the request was successful else [`RequestError`]
     pub async fn send_request(
         &self,
         tls: bool,
@@ -171,13 +171,16 @@ impl Client {
                     let headers = remaining_lines
                         .iter()
                         .map(|x| Header::parse(&x.trim_end()))
-                        .collect::<Result<Vec<Header>, anyhow::Error>>()?;
+                        .collect::<Result<Vec<Header>, RequestError>>()?;
 
                     let redirected_location = headers
                         .iter()
                         .find(|x| x.name.eq_ignore_ascii_case("Location"));
 
-                    if should_redirect(response_info.status_code) && redirected_location.is_some() {
+                    if request.follow_redirects()
+                        && should_redirect(response_info.status_code)
+                        && redirected_location.is_some()
+                    {
                         if redirect_count >= MAX_REDIRECTS {
                             return Err(RequestError::ConnectionError(
                                 "Too many redirects".to_string(),

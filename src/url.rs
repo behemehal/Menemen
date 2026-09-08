@@ -1,4 +1,4 @@
-use anyhow::{Context, Error};
+use crate::error::RequestError;
 
 /// QueryParam
 #[derive(Clone, Debug, PartialEq)]
@@ -28,7 +28,7 @@ impl Url {
     /// Builds a URL from a string
     /// * `url_string` - The URL string
     /// ## Returns
-    /// [`Url`] if the URL was successfully parsed else [`Error`]
+    /// [`Url`] if the URL was successfully parsed else [`RequestError::MalformedUrl`]
     /// ## Example
     /// ```rust
     /// use menemen::url::Url;
@@ -43,13 +43,13 @@ impl Url {
     /// assert_eq!(url.paths.len(), 1);
     /// assert_eq!(url.paths[0], "test".to_string());
     /// ```
-    pub fn build_from_string(url: String) -> Result<Url, Error> {
+    pub fn build_from_string(url: String) -> Result<Url, RequestError> {
         let mut new_url = url.clone();
         let protocol = url
             .split("://")
             .collect::<Vec<&str>>()
             .first()
-            .with_context(|| "Failed to parse protocol")?
+            .ok_or(RequestError::MalformedUrl)?
             .to_string();
         new_url = new_url.replace(&format!("{}://", protocol.as_str()), "");
         let (host, port) = {
@@ -73,7 +73,7 @@ impl Url {
             };
             let port = _port
                 .parse::<u16>()
-                .with_context(|| "Failed to parse port")?;
+                .map_err(|_| RequestError::MalformedUrl)?;
             (host, port)
         };
         new_url = format!(

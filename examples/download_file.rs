@@ -1,5 +1,6 @@
 //! Downloads a file with progress output using the blocking client.
 
+#[cfg(not(feature = "async"))]
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 #[cfg(not(feature = "async"))]
 use menemen::prelude::*;

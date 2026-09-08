@@ -1,12 +1,14 @@
 use crate::error::RequestError;
 use crate::request;
 use crate::transport::Transport;
-use anyhow::Context as _;
 
 use bytes::BytesMut;
 use pin_project_lite::pin_project;
 #[cfg(feature = "async")]
-use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+use tokio::io::AsyncReadExt;
+// read_line is only needed by the gzip-only chunk-size helper.
+#[cfg(all(feature = "async", feature = "gzip"))]
+use tokio::io::AsyncBufReadExt;
 #[cfg(feature = "async")]
 use tokio::io::{AsyncRead, ReadBuf};
 
@@ -35,8 +37,8 @@ impl ResponseInfo {
     /// ## Parameters
     /// * `response` - The HTTP/1.1 200 OK answer
     /// ## Returns
-    /// [`ResponseInfo`] if the answer was successfully parsed else [`anyhow::Error`]
-    pub fn parse_response_info(response: &str) -> Result<ResponseInfo, anyhow::Error> {
+    /// [`ResponseInfo`] if the answer was successfully parsed else [`RequestError::InvalidResponse`]
+    pub fn parse_response_info(response: &str) -> Result<ResponseInfo, RequestError> {
         let mut response_info = ResponseInfo {
             http_version: String::new(),
             status_code: 0,
@@ -44,15 +46,12 @@ impl ResponseInfo {
         };
         let response_info_vec: Vec<&str> = response.split(" ").collect();
         if response_info_vec.len() < 2 {
-            return Err(anyhow::anyhow!("Failed to parse response info"));
+            return Err(RequestError::InvalidResponse(response.to_string()));
         }
         response_info.http_version = response_info_vec[0].to_string();
-        response_info.status_code = response_info_vec[1].parse::<u16>().with_context(|| {
-            format!(
-                "Failed to parse status code from response: {}",
-                response_info_vec[1]
-            )
-        })?;
+        response_info.status_code = response_info_vec[1]
+            .parse::<u16>()
+            .map_err(|_| RequestError::InvalidResponse(response.to_string()))?;
         response_info.status_message = response_info_vec[2..].join(" ");
         Ok(response_info)
     }
@@ -85,10 +84,9 @@ impl Debug for Response {
 }
 
 impl Response {
-    //TODO: Implement AsyncRead instead
-    #[cfg(feature = "async")]
+    #[cfg(all(feature = "async", feature = "gzip"))]
     /// Reads the full body into memory.
-    pub async fn _read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
+    pub(crate) async fn _read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
         self.consumed = true;
         if self.request_chunked {
             let mut chunk_size = self.read_chunk_size(false).await?;
@@ -118,7 +116,7 @@ impl Response {
 
     #[cfg(not(feature = "async"))]
     /// Reads the full body into memory.
-    pub fn _read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
+    pub(crate) fn _read_to_end(&mut self) -> Result<Vec<u8>, RequestError> {
         self.consumed = true;
         if self.request_chunked {
             let mut chunk_size = self.read_chunk_size(false)?;
@@ -153,8 +151,9 @@ impl Response {
             #[cfg(feature = "gzip")]
             {
                 use libflate::gzip::Decoder;
+                use std::io::{Cursor, Read};
 
-                let read_data = self.read_to_end().await?;
+                let read_data = self._read_to_end().await?;
                 let read_data = Cursor::new(read_data);
                 let mut decoder =
                     Decoder::new(read_data).map_err(|e| RequestError::TextError(e.to_string()))?;
@@ -252,7 +251,7 @@ impl Response {
         Ok(json)
     }
 
-    #[cfg(feature = "async")]
+    #[cfg(all(feature = "async", feature = "gzip"))]
     async fn read_chunk_size(&mut self, double_read: bool) -> Result<usize, std::io::Error> {
         let mut chunk_size_string = String::new();
 
@@ -317,6 +316,14 @@ impl Read for Response {
 
             if self.current_chunk_size == 0 && self.read_chunk_size == 0 {
                 self.current_chunk_size = self.read_chunk_size(false)?;
+
+                // A body that is only the terminating zero-length chunk is
+                // empty, not an error: return before the loop asks for
+                // another chunk header.
+                if self.current_chunk_size == 0 {
+                    self.consumed = true;
+                    return Ok(0);
+                }
             }
 
             let mut read_buffer_len = 0;
@@ -334,6 +341,16 @@ impl Read for Response {
                 let read_byte = self
                     .stream
                     .read(&mut buf[read_buffer_len..(pointer + read_buffer_len)])?;
+
+                // Without this the loop would spin forever on a truncated body,
+                // since read_buffer_len can never reach buf.len().
+                if read_byte == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "connection closed while reading chunk data",
+                    ));
+                }
+
                 self.read_chunk_size += read_byte;
                 read_buffer_len += read_byte;
             }

@@ -59,15 +59,16 @@ impl std::fmt::Debug for MultipartFormData {
     }
 }
 
+/// RFC 2046 only allows a restricted character set in a multipart boundary.
+/// Sticking to alphanumerics keeps every generated boundary valid.
+const BOUNDARY_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
 impl MultipartFormData {
     /// Creates an empty multipart form-data builder with a random boundary.
     pub fn new() -> MultipartFormData {
         let mut rng = rand::rng();
         let boundary: String = (0..30)
-            .map(|_| {
-                let c: char = rng.random_range(48..122).into();
-                c
-            })
+            .map(|_| BOUNDARY_CHARS[rng.random_range(0..BOUNDARY_CHARS.len())] as char)
             .collect();
         MultipartFormData {
             form_data: Vec::new(),

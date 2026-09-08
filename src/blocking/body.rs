@@ -33,6 +33,7 @@ impl Body {
         match &self.body {
             BodyType::Reader(_) => None,
             BodyType::Bytes(cursor) => Some(cursor.get_ref().len()),
+            #[cfg(feature = "multipart")]
             BodyType::MultipartFormData(_) => None,
             BodyType::FormData(form_data) => Some(form_data.build().into_bytes().len()),
         }
@@ -43,6 +44,7 @@ impl Body {
         match &self.body {
             BodyType::Reader(_) => None,
             BodyType::Bytes(_) => None,
+            #[cfg(feature = "multipart")]
             BodyType::MultipartFormData(_) => Some("multipart/form-data".to_string()),
             BodyType::FormData(_) => Some("application/x-www-form-urlencoded".to_string()),
         }
@@ -54,6 +56,7 @@ impl std::fmt::Debug for Body {
         match &self.body {
             BodyType::Reader(_) => write!(f, "BodyType::Reader"),
             BodyType::Bytes(bytes) => write!(f, "BodyType::Bytes({:?})", bytes),
+            #[cfg(feature = "multipart")]
             BodyType::MultipartFormData(_) => write!(f, "BodyType::MultipartFormData"),
             BodyType::FormData(_) => write!(f, "BodyType::FormData"),
         }
@@ -97,8 +100,11 @@ impl Read for Body {
                 let mut cursor = Cursor::new(bytes);
                 cursor.read(buf)
             }
+            #[cfg(feature = "multipart")]
             BodyType::MultipartFormData(data) => {
-                let built = data.build().unwrap();
+                let built = data
+                    .build()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
                 let mut cursor = Cursor::new(built);
                 cursor.read(buf)
@@ -107,93 +113,17 @@ impl Read for Body {
     }
 }
 
-/* impl Read for Body {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.body.read(buf)
+impl From<Cursor<Vec<u8>>> for Body {
+    fn from(cursor: Cursor<Vec<u8>>) -> Body {
+        Body::from_reader(cursor)
     }
 }
 
-impl Read for BodyType {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self {
-            BodyType::Reader(reader) => reader.read(buf),
-            BodyType::Bytes(cursor) => {
-                println!("Reading from cursor: {:#?}", cursor);
-
-                cursor.read(buf)
-            }
-            BodyType::FormData(form_data) => {
-                let form_data_string = form_data.build();
-                println!("form_data_string: {:#?}", form_data_string);
-
-                let mut bytes = form_data_string.into_bytes();
-                bytes.extend(b"\n");
-
-                println!("bytes: {:#?}", bytes);
-
-                let mut cursor = Cursor::new(bytes);
-                cursor.read(buf)
-            }
-            BodyType::MultipartFormData(_) => {
-                unimplemented!()
-            }
-        }
+impl From<Cursor<&'static [u8]>> for Body {
+    fn from(cursor: Cursor<&'static [u8]>) -> Body {
+        Body::from_reader(cursor)
     }
 }
-//
-
-impl Write for Body {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        unimplemented!();
-        self.body.write(buf)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        unimplemented!();
-        Ok(())
-    }
-}
-
-impl Write for BodyType {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        match self {
-            BodyType::Reader(_) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Cannot write to a reader",
-            )),
-            BodyType::Bytes(bytes) => {
-                unimplemented!();
-                //bytes.extend_from_slice(buf);
-                //Ok(buf.len())
-            }
-            BodyType::FormData(form_data) => {
-                unimplemented!();
-                //let mut bytes = form_data.build().into_bytes();
-                //bytes.extend_from_slice(buf);
-                Ok(buf.len())
-            }
-            BodyType::MultipartFormData(_) => todo!(),
-        }
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
- */
-//
-impl Into<Body> for Cursor<Vec<u8>> {
-    fn into(self) -> Body {
-        Body::from_reader(self)
-    }
-}
-
-impl Into<Body> for Cursor<&'static [u8]> {
-    fn into(self) -> Body {
-        Body::from_reader(self)
-    }
-}
-//
 
 impl From<String> for Body {
     fn from(s: String) -> Body {
@@ -235,6 +165,7 @@ impl From<FormData> for Body {
     }
 }
 
+#[cfg(feature = "multipart")]
 impl From<MultipartFormData> for Body {
     fn from(value: MultipartFormData) -> Self {
         Body {

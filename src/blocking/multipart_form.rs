@@ -56,15 +56,16 @@ impl std::fmt::Debug for MultipartFormData {
     }
 }
 
+/// RFC 2046 only allows a restricted character set in a multipart boundary.
+/// Sticking to alphanumerics keeps every generated boundary valid.
+const BOUNDARY_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
 impl MultipartFormData {
     /// Creates an empty multipart form-data builder with a random boundary.
     pub fn new() -> MultipartFormData {
         let mut rng = rand::rng();
         let boundary: String = (0..30)
-            .map(|_| {
-                let c: char = rng.random_range(48..122).into();
-                c
-            })
+            .map(|_| BOUNDARY_CHARS[rng.random_range(0..BOUNDARY_CHARS.len())] as char)
             .collect();
         MultipartFormData {
             form_data: Vec::new(),
@@ -79,7 +80,7 @@ impl MultipartFormData {
     }
 
     /// Adds a file part by opening a file path.
-    pub async fn add_file(&mut self, name: &str, file_path: &str) -> Result<(), RequestError> {
+    pub fn add_file(&mut self, name: &str, file_path: &str) -> Result<(), RequestError> {
         //Check if file exists
         if fs::metadata(file_path).is_err() {
             return Err(RequestError::FileError("File not found".to_string()));

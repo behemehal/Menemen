@@ -1,37 +1,39 @@
-use bufstream::BufStream;
-
 #[cfg(feature = "https")]
 use native_tls::TlsStream;
 
 use std::{
-    io::{BufRead, Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::TcpStream,
 };
 
 /// This enum is a bridge for the different types of streams that can be used to communicate with the server.
+///
+/// Reads are buffered because header and chunk-size parsing is line-oriented.
+/// Writes go straight to the socket: a request is emitted as one head write plus
+/// at most one body write, so an extra write buffer would only add a copy.
 #[allow(missing_debug_implementations)]
 pub enum Transport {
     /// Ssl stream
     #[cfg(feature = "https")]
-    Ssl(BufStream<TlsStream<TcpStream>>),
+    Ssl(BufReader<TlsStream<TcpStream>>),
     /// Tcp stream
-    Tcp(BufStream<TcpStream>),
+    Tcp(BufReader<TcpStream>),
 }
 
 impl Write for Transport {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
             #[cfg(feature = "https")]
-            Transport::Ssl(socket) => socket.write(buf),
-            Transport::Tcp(socket) => socket.write(buf),
+            Transport::Ssl(socket) => socket.get_mut().write(buf),
+            Transport::Tcp(socket) => socket.get_mut().write(buf),
         }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
             #[cfg(feature = "https")]
-            Transport::Ssl(socket) => socket.flush(),
-            Transport::Tcp(socket) => socket.flush(),
+            Transport::Ssl(socket) => socket.get_mut().flush(),
+            Transport::Tcp(socket) => socket.get_mut().flush(),
         }
     }
 }

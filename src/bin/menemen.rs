@@ -9,13 +9,9 @@
 //! - Verbose output: menemen -v https://example.com
 //! - Save to file:   menemen -o response.txt https://example.com
 
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 use std::fs;
-
-#[cfg(feature = "async")]
-compile_error!(
-    "menemen CLI is blocking-only. Build with: cargo run --no-default-features --features \"blocking,cli,https,json,multipart\" -- <args>"
-);
 
 #[derive(Parser, Debug)]
 #[command(
@@ -88,7 +84,44 @@ struct RequestArgs {
 
     /// Color output: auto, always, never
     #[arg(long, value_name = "WHEN", default_value = "auto")]
-    color: String,
+    color: ColorWhen,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum ColorWhen {
+    /// Colorize only when stdout is a terminal and NO_COLOR is unset
+    Auto,
+    Always,
+    Never,
+}
+
+/// Wraps text in ANSI SGR codes when coloring is enabled.
+#[derive(Copy, Clone, Debug)]
+struct Style {
+    enabled: bool,
+}
+
+impl Style {
+    fn new(when: ColorWhen) -> Self {
+        let enabled = match when {
+            ColorWhen::Always => true,
+            ColorWhen::Never => false,
+            ColorWhen::Auto => {
+                use std::io::IsTerminal;
+                std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+            }
+        };
+        Style { enabled }
+    }
+
+    fn paint(&self, code: &str, text: &str) -> String {
+        if self.enabled {
+            let esc = 27 as char;
+            format!("{esc}[{code}m{text}{esc}[0m")
+        } else {
+            text.to_string()
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -98,9 +131,9 @@ enum Commands {
 
     /// Generate shell completions
     Completions {
-        /// Shell type: bash, zsh, fish, powershell
+        /// Shell type: bash, zsh, fish, powershell, elvish
         #[arg(value_name = "SHELL")]
-        shell: String,
+        shell: Shell,
     },
 
     /// Show version
@@ -123,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Some(Commands::Completions { shell }) => {
-            handle_completions(&shell)?;
+            handle_completions(shell)?;
             Ok(())
         }
         Some(Commands::Request(args)) => handle_request(args),
@@ -147,7 +180,7 @@ impl Default for RequestArgs {
             pretty_json: false,
             timeout: 5000,
             no_follow: false,
-            color: "auto".to_string(),
+            color: ColorWhen::Auto,
         }
     }
 }
@@ -189,6 +222,7 @@ fn handle_request(args: RequestArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     // Set timeout
     request.set_timeout(args.timeout);
+    request.set_follow_redirects(!args.no_follow);
 
     // Add headers
     for header in args.header {
@@ -229,7 +263,31 @@ fn handle_request(args: RequestArgs) -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Body (form): {} fields", args.form.len());
         }
     } else if !args.multipart.is_empty() {
-        eprintln!("Note: Multipart not yet implemented in this CLI version");
+        use menemen::prelude::MultipartFormData;
+
+        let mut multipart = MultipartFormData::new();
+        for field in &args.multipart {
+            let parts: Vec<&str> = field.splitn(2, '=').collect();
+            if parts.len() != 2 {
+                eprintln!(
+                    "Warning: Invalid multipart field '{}', expected NAME=@PATH or NAME=VALUE, skipping",
+                    field
+                );
+                continue;
+            }
+
+            let (name, value) = (parts[0], parts[1]);
+            match value.strip_prefix('@') {
+                Some(path) => multipart.add_file(name, path)?,
+                None => multipart.add_string(name, value.to_string()),
+            }
+        }
+
+        // The client fills in Content-Type with the generated boundary.
+        request.append_body(multipart.into());
+        if args.verbose {
+            eprintln!("Body (multipart): {} fields", args.multipart.len());
+        }
     }
 
     // Send request
@@ -255,15 +313,26 @@ fn handle_request(args: RequestArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(output_file) = args.output {
         fs::write(&output_file, &output_text)?;
-        if args.verbose || !args.verbose {
-            eprintln!("Wrote response to '{}'", output_file);
-        }
+        eprintln!("Wrote response to '{}'", output_file);
     } else {
         // Include headers if requested
         if args.include {
-            println!("HTTP/1.1 {}", response.response_info.status_code);
+            let style = Style::new(args.color);
+            let status = response.response_info.status_code;
+            let status_code = match status {
+                200..=299 => style.paint("32", &status.to_string()),
+                300..=399 => style.paint("33", &status.to_string()),
+                _ => style.paint("31", &status.to_string()),
+            };
+
+            println!(
+                "{} {} {}",
+                style.paint("1", &response.response_info.http_version),
+                status_code,
+                response.response_info.status_message
+            );
             for header in &response.headers {
-                println!("{}: {}", header.name, header.value);
+                println!("{}: {}", style.paint("36", &header.name), header.value);
             }
             println!();
         }
@@ -292,13 +361,9 @@ fn pretty_print_json(json_str: &str) -> Result<String, Box<dyn std::error::Error
     }
 }
 
-fn handle_completions(shell: &str) -> Result<(), Box<dyn std::error::Error>> {
-    match shell.to_lowercase().as_str() {
-        "bash" | "zsh" | "fish" | "powershell" => {
-            eprintln!("Completion generation for {} not yet implemented.", shell);
-            eprintln!("Add clap_complete support in future versions.");
-            Ok(())
-        }
-        _ => Err(format!("Unknown shell: {}", shell).into()),
-    }
+fn handle_completions(shell: Shell) -> Result<(), Box<dyn std::error::Error>> {
+    let mut command = Cli::command();
+    let name = command.get_name().to_string();
+    clap_complete::generate(shell, &mut command, name, &mut std::io::stdout());
+    Ok(())
 }

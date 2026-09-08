@@ -1,5 +1,4 @@
 use crate::{body::Body, client::Client, error::RequestError, response::Response, url::Url};
-use anyhow::Context;
 
 /// HTTP Header
 /// ##### [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers]
@@ -16,7 +15,7 @@ impl Header {
     /// ## Parameters
     /// * `line` - The raw http header response
     /// ## Returns
-    /// [`Header`] if the header was successfully parsed else [`error::Error`]
+    /// [`Header`] if the header was successfully parsed else [`RequestError::InvalidHeader`]
     /// ## Example
     /// ```
     /// use menemen::request::Header;
@@ -24,9 +23,9 @@ impl Header {
     /// assert_eq!(header.name.clone(), "Content-Type");
     /// assert_eq!(header.value, "text/html; charset=utf-8");
     /// ```
-    pub fn parse(line: &str) -> anyhow::Result<Header> {
+    pub fn parse(line: &str) -> Result<Header, RequestError> {
         if !line.contains(":") {
-            return Err(anyhow::anyhow!("Failed to parse response info"));
+            return Err(RequestError::InvalidHeader(line.to_string()));
         }
         let mut parts = line.splitn(2, ':');
         let name = parts
@@ -34,7 +33,7 @@ impl Header {
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
         if name.is_empty() {
-            return Err(anyhow::anyhow!("Failed to parse response info"));
+            return Err(RequestError::InvalidHeader(line.to_string()));
         }
         let value = parts
             .next()
@@ -149,6 +148,8 @@ pub struct Request {
     headers: Vec<Header>,
     /// Timeout of the request [`u64`]
     timeout: u64,
+    /// Whether redirect responses are followed automatically
+    follow_redirects: bool,
     /// Is the request sent
     sent: bool,
 }
@@ -159,10 +160,9 @@ impl Request {
     /// * `url` - The url to send the request to
     /// * `request_type` - The type of request to send takes [`RequestTypes`]
     /// ## Returns
-    /// [`Request`] if the request was successfully created else [`error::Error`]
-    pub fn new(url: &str, request_type: RequestTypes) -> anyhow::Result<Request> {
-        let url = crate::url::Url::build_from_string(url.to_string())
-            .with_context(|| "Failed to parse url")?;
+    /// [`Request`] if the request was successfully created else [`RequestError`]
+    pub fn new(url: &str, request_type: RequestTypes) -> Result<Request, RequestError> {
+        let url = crate::url::Url::build_from_string(url.to_string())?;
         let headers = Vec::new();
         let mut request = Request {
             url: url.clone(),
@@ -171,6 +171,7 @@ impl Request {
             headers,
             body_to_send: None,
             timeout: 5000,
+            follow_redirects: true,
             sent: false,
         };
         request.set_header("Host", &host_header_value(&url));
@@ -228,6 +229,25 @@ impl Request {
             self.timeout = timeout;
             None
         }
+    }
+
+    /// Controls whether `302`, `303`, `307` and `308` responses are followed
+    /// automatically. Enabled by default.
+    /// ## Parameters
+    /// * `follow` - `false` to return the redirect response as-is
+    /// ## Example
+    /// ```
+    /// use menemen::request::{Request, RequestTypes};
+    /// let mut request = Request::new("http://example.com", RequestTypes::GET).unwrap();
+    /// request.set_follow_redirects(false);
+    /// ```
+    pub fn set_follow_redirects(&mut self, follow: bool) -> &mut Self {
+        self.follow_redirects = follow;
+        self
+    }
+
+    pub(crate) fn follow_redirects(&self) -> bool {
+        self.follow_redirects
     }
 
     pub(crate) fn timeout(&self) -> u64 {

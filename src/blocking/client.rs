@@ -7,7 +7,7 @@ use crate::{
     url::Url,
 };
 
-use bufstream::BufStream;
+use std::io::BufReader;
 use bytes::BytesMut;
 use std::io::{BufRead, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -65,7 +65,7 @@ impl Client {
 
     /// Connect to the server
     /// ## Returns
-    /// [`anyhow::Result`] with [`TcpStream`] if the connection was successful else [`anyhow::Error`]
+    /// [`Result`] with [`TcpStream`] if the connection was successful else [`RequestError`]
     pub fn connect(&self, timeout_ms: u64) -> Result<TcpStream, RequestError> {
         let address = format!("{}:{}", self.url.host, self.url.port);
         let timeout = Duration::from_millis(timeout_ms);
@@ -90,7 +90,7 @@ impl Client {
     /// * `request` - The request to send
     /// * `tls` - Whether to use TLS
     /// ## Returns
-    /// [`anyhow::Result`] with [`Response`] if the request was successful else [`anyhow::Error`]
+    /// [`Result`] with [`Response`] if the request was successful else [`RequestError`]
     pub fn send_request(&self, tls: bool, request: &mut Request) -> Result<Response, RequestError> {
         use std::io::Read;
 
@@ -106,14 +106,14 @@ impl Client {
                     let connector = TlsConnector::new()
                         .map_err(|e| RequestError::ConnectionError(e.to_string()))?;
                     let stream = connector.connect(&current_url.host, stream)?;
-                    Transport::Ssl(BufStream::new(stream))
+                    Transport::Ssl(BufReader::new(stream))
                 }
                 #[cfg(not(feature = "https"))]
                 {
                     return Err(RequestError::TlsNotEnabled);
                 }
             } else {
-                Transport::Tcp(BufStream::new(stream))
+                Transport::Tcp(BufReader::new(stream))
             };
 
             let mut read_body = None;
@@ -172,13 +172,16 @@ impl Client {
                     let headers = remaining_lines
                         .iter()
                         .map(|x| Header::parse(&x.trim_end()))
-                        .collect::<Result<Vec<Header>, anyhow::Error>>()?;
+                        .collect::<Result<Vec<Header>, RequestError>>()?;
 
                     let redirected_location = headers
                         .iter()
                         .find(|x| x.name.eq_ignore_ascii_case("Location"));
 
-                    if should_redirect(response_info.status_code) && redirected_location.is_some() {
+                    if request.follow_redirects()
+                        && should_redirect(response_info.status_code)
+                        && redirected_location.is_some()
+                    {
                         if redirect_count >= MAX_REDIRECTS {
                             return Err(RequestError::ConnectionError(
                                 "Too many redirects".to_string(),

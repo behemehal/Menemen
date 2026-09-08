@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::Debug;
 
-#[cfg(all(feature = "https", not(feature = "async")))]
+#[cfg(all(feature = "https", feature = "blocking"))]
 use native_tls;
 
 #[cfg(feature = "json")]
@@ -30,6 +30,10 @@ pub enum RequestError {
     TextError(String),
     /// JSON error, received JSON could not be parsed
     JsonError(String),
+    /// A response header line could not be parsed
+    InvalidHeader(String),
+    /// The response status line could not be parsed
+    InvalidResponse(String),
 }
 
 // Implement `fmt::Display` for `RequestError`
@@ -47,8 +51,13 @@ impl fmt::Display for RequestError {
             RequestError::TlsNotEnabled => {
                 write!(f, "TLS feature is not enabled, enable it to use HTTPS")
             }
-            ,
-            e => write!(f, "{:?}", e),
+            RequestError::FileError(err) => write!(f, "File error: {}", err),
+            RequestError::TextError(err) => write!(f, "Text decode error: {}", err),
+            RequestError::JsonError(err) => write!(f, "JSON error: {}", err),
+            RequestError::InvalidHeader(line) => write!(f, "Malformed header line: {}", line),
+            RequestError::InvalidResponse(line) => {
+                write!(f, "Malformed response status line: {}", line)
+            }
         }
     }
 }
@@ -62,20 +71,14 @@ impl From<std::io::Error> for RequestError {
     }
 }
 
-impl From<anyhow::Error> for RequestError {
-    fn from(error: anyhow::Error) -> Self {
-        RequestError::ConnectionError(error.to_string())
-    }
-}
-
-#[cfg(all(feature = "https", not(feature = "async")))]
+#[cfg(all(feature = "https", feature = "blocking"))]
 impl From<native_tls::HandshakeError<std::net::TcpStream>> for RequestError {
     fn from(error: native_tls::HandshakeError<std::net::TcpStream>) -> Self {
         RequestError::ConnectionError(error.to_string())
     }
 }
 
-#[cfg(all(feature = "https", not(feature = "async")))]
+#[cfg(all(feature = "https", feature = "blocking"))]
 impl From<native_tls::Error> for RequestError {
     fn from(error: native_tls::Error) -> Self {
         RequestError::ConnectionError(error.to_string())
@@ -108,8 +111,9 @@ impl From<&str> for RequestError {
     }
 }
 
+#[cfg(feature = "json")]
 impl From<JsonError> for RequestError {
-    fn from(error: serde_json::Error) -> Self {
+    fn from(error: JsonError) -> Self {
         RequestError::JsonError(error.to_string())
     }
 }
