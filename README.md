@@ -230,6 +230,7 @@ Every example runs in both blocking and async mode.
 | `parse_url` | URL parser in isolation |
 | `form_data` | URL-encoded forms |
 | `multipart_form_data` | File + text upload |
+| `methods` | HEAD, PATCH and OPTIONS requests |
 | `json` | Typed JSON deserialization (needs `async`) |
 | `gzip` | gzip-compressed responses |
 | `chunked` | `Transfer-Encoding: chunked` decoding |

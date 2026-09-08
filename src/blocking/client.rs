@@ -1,7 +1,7 @@
 use crate::{
     body::BodyType,
     error::RequestError,
-    request::{ContentTypes, Header, Request},
+    request::{ContentTypes, Header, Request, RequestTypes},
     response::{Response, ResponseInfo},
     transport::Transport,
     url::Url,
@@ -205,12 +205,18 @@ impl Client {
                                 .any(|v| v.trim().eq_ignore_ascii_case("chunked"))
                     });
 
+                    // A HEAD response never carries a body, even when it
+                    // advertises Content-Length or chunked encoding. Treat it
+                    // as consumed so reads return EOF instead of blocking.
+                    let is_head = request.request_type() == RequestTypes::HEAD;
+
                     return Ok(Response {
                         response_info,
                         headers,
                         stream,
-                        consumed: false,
-                        request_chunked,
+                        consumed: is_head,
+                        body_absent: is_head,
+                        request_chunked: request_chunked && !is_head,
                         current_chunk_size: 0,
                         read_chunk_size: 0,
                         chunk_parse_buffer: BytesMut::new(),

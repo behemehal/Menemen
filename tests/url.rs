@@ -192,4 +192,32 @@ mod tests {
         assert_eq!(url.port, 3000);
         assert_eq!(url.paths, vec!["health".to_string()]);
     }
+
+    /// Regression: a query string on a host-only URL used to be folded into the
+    /// hostname and then dropped, so the request went out without it.
+    #[test]
+    fn query_on_host_only_url_is_kept() {
+        let url =
+            menemen::url::Url::build_from_string("https://example.com?q1=123&q2=456".to_string())
+                .unwrap();
+
+        assert_eq!(url.is_https, true);
+        assert_eq!(url.host, "example.com".to_string());
+        assert_eq!(url.port, 443);
+        assert_eq!(url.paths.len(), 0);
+        assert_eq!(
+            url.query_params,
+            vec![
+                QueryParam {
+                    name: "q1".to_string(),
+                    value: "123".to_string()
+                },
+                QueryParam {
+                    name: "q2".to_string(),
+                    value: "456".to_string()
+                }
+            ]
+        );
+        assert_eq!(url.join_query_params(), "q1=123&q2=456".to_string());
+    }
 }

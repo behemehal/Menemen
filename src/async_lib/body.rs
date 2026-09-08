@@ -144,10 +144,10 @@ impl From<TokioFile> for Body {
 
 impl From<FormData> for Body {
     fn from(value: FormData) -> Self {
-        let built_form_data = value.build();
-        let cursor = Cursor::new(built_form_data.into_bytes());
+        // Kept as FormData rather than flattened to bytes so the client can set
+        // Content-Type: application/x-www-form-urlencoded for it.
         Body {
-            body: BodyType::Bytes(cursor),
+            body: BodyType::FormData(value),
         }
     }
 }

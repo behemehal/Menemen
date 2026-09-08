@@ -57,7 +57,7 @@ fn host_header_value(url: &Url) -> String {
 
 /// List of RequestTypes
 /// #### https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestTypes {
     /// GET Method
     GET,
@@ -67,6 +67,12 @@ pub enum RequestTypes {
     PUT,
     /// DELETE Method
     DELETE,
+    /// HEAD Method
+    HEAD,
+    /// PATCH Method
+    PATCH,
+    /// OPTIONS Method
+    OPTIONS,
 }
 
 impl RequestTypes {
@@ -77,6 +83,9 @@ impl RequestTypes {
             RequestTypes::POST => "POST".to_string(),
             RequestTypes::PUT => "PUT".to_string(),
             RequestTypes::DELETE => "DELETE".to_string(),
+            RequestTypes::HEAD => "HEAD".to_string(),
+            RequestTypes::PATCH => "PATCH".to_string(),
+            RequestTypes::OPTIONS => "OPTIONS".to_string(),
         }
     }
 }
@@ -107,7 +116,7 @@ pub enum ContentTypes {
 
 impl Default for ContentTypes {
     fn default() -> Self {
-        ContentTypes::Any
+        ContentTypes::OctetStream
     }
 }
 
@@ -181,12 +190,16 @@ impl Request {
             "User-Agent",
             &format!("Menemen/{}", env!("CARGO_PKG_VERSION")),
         );
+        request.set_header("Accept", "*/*");
         Ok(request)
     }
 
     /// Builds the request body
     pub(crate) fn build_request_body(&mut self) -> String {
-        if self.get_header("Content-Type").is_none() {
+        // Only a request that carries a body describes one. Sending
+        // Content-Type on a bodyless GET is meaningless and some servers
+        // reject it.
+        if self.body_to_send.is_some() && self.get_header("Content-Type").is_none() {
             self.set_header("Content-Type", &self.content_type.clone().get_type());
         }
 
@@ -248,6 +261,10 @@ impl Request {
 
     pub(crate) fn follow_redirects(&self) -> bool {
         self.follow_redirects
+    }
+
+    pub(crate) fn request_type(&self) -> RequestTypes {
+        self.request_type
     }
 
     pub(crate) fn timeout(&self) -> u64 {

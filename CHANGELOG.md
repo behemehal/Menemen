@@ -25,9 +25,22 @@
 - Fix `blocking::MultipartFormData::add_file` being declared `async`, which made
   it uncallable without an executor
 - Drop the `anyhow`, `bufstream` and `futures` dependencies
+- Percent-encode form keys and values, and decode them in `FormData::from_str`;
+  an unescaped `&` or `=` in a value previously split one field into several
+- Strip the URL fragment, which was being sent to the server as part of the path
+- Keep the query string of a host-only URL such as `http://example.com?q=1`,
+  which was previously folded into the hostname and then dropped
+- Stop sending `Content-Type` on bodyless requests, and stop defaulting it to an
+  `Accept`-style value; send `Accept: */*` instead
+- Keep `From<FormData> for Body` as a form body so the client labels it
+  `application/x-www-form-urlencoded` rather than falling back to the default
+- Add the `HEAD`, `PATCH` and `OPTIONS` methods, and treat a HEAD response as
+  bodyless so reads return EOF instead of consuming the next response
 - Add `Request::set_follow_redirects` to opt out of automatic redirects
 - CLI: implement shell completions, `--multipart`, `--no-follow` and
   `--color`, which were previously accepted but inert
 - Add decoder, error and boundary test suites; the test suite now passes in
   async mode as well as blocking
+- Add wire-level tests that assert the exact request bytes, plus an
+  `examples/methods.rs` demonstrating HEAD, PATCH and OPTIONS
 - Add `CLI.md` and a bundled chunked demo server for `examples/chunked.rs`

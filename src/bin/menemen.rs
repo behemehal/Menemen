@@ -34,7 +34,7 @@ struct RequestArgs {
     /// URL to request
     url: Option<String>,
 
-    /// HTTP method (GET, POST, PUT, DELETE)
+    /// HTTP method (GET, POST, PUT, DELETE, HEAD, PATCH, OPTIONS)
     #[arg(short = 'X', long, value_name = "METHOD")]
     method: Option<String>,
 
@@ -215,6 +215,9 @@ fn handle_request(args: RequestArgs) -> Result<(), Box<dyn std::error::Error>> {
         "POST" => menemen::request::RequestTypes::POST,
         "PUT" => menemen::request::RequestTypes::PUT,
         "DELETE" => menemen::request::RequestTypes::DELETE,
+        "HEAD" => menemen::request::RequestTypes::HEAD,
+        "PATCH" => menemen::request::RequestTypes::PATCH,
+        "OPTIONS" => menemen::request::RequestTypes::OPTIONS,
         m => return Err(format!("Unsupported method: {}", m).into()),
     };
 

@@ -13,6 +13,68 @@ pub struct FormData {
     pub form_data: Vec<(String, String)>,
 }
 
+const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
+
+/// Percent-encodes one key or value for an `application/x-www-form-urlencoded`
+/// payload: unreserved characters pass through, a space becomes `+`, and every
+/// other byte becomes an uppercase `%XX` escape.
+fn encode_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(*byte as char)
+            }
+            b' ' => encoded.push('+'),
+            _ => {
+                encoded.push('%');
+                encoded.push(HEX_DIGITS[(byte >> 4) as usize] as char);
+                encoded.push(HEX_DIGITS[(byte & 0x0f) as usize] as char);
+            }
+        }
+    }
+
+    encoded
+}
+
+/// Reverses [`encode_component`]. Invalid escapes are kept verbatim rather than
+/// dropped, so parsing never loses data.
+fn decode_component(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let high = (bytes[index + 1] as char).to_digit(16);
+                let low = (bytes[index + 2] as char).to_digit(16);
+                match (high, low) {
+                    (Some(high), Some(low)) => {
+                        decoded.push((high * 16 + low) as u8);
+                        index += 3;
+                    }
+                    _ => {
+                        decoded.push(bytes[index]);
+                        index += 1;
+                    }
+                }
+            }
+            other => {
+                decoded.push(other);
+                index += 1;
+            }
+        }
+    }
+
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
 impl FormData {
     /// Creates an empty form-data collection.
     pub fn new() -> Self {
@@ -26,7 +88,7 @@ impl FormData {
         Self { form_data: map }
     }
 
-    /// Parses a URL-encoded form-data string.
+    /// Parses a URL-encoded form-data string, percent-decoding keys and values.
     ///
     /// Invalid pairs (for example missing keys) are skipped.
     pub fn from_str(data: &str) -> Self {
@@ -46,7 +108,7 @@ impl FormData {
                 continue;
             }
             let value = split.next().unwrap_or("");
-            form_data.push((key.to_string(), value.to_string()));
+            form_data.push((decode_component(key), decode_component(value)));
         }
         Self { form_data }
     }
@@ -89,7 +151,9 @@ impl FormData {
     pub(crate) fn build(&self) -> String {
         self.form_data
             .iter()
-            .map(|(key, value)| format!("{}={}", key, value))
+            .map(|(key, value)| {
+                format!("{}={}", encode_component(key), encode_component(value))
+            })
             .collect::<Vec<String>>()
             .join("&")
     }

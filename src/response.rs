@@ -66,6 +66,9 @@ pin_project! {
         #[pin]
         pub stream: Transport,
         pub(crate) consumed: bool,
+        // Set for responses that cannot carry a body (HEAD), where the
+        // socket may already hold the next response.
+        pub(crate) body_absent: bool,
         pub(crate) request_chunked: bool,
         pub(crate) current_chunk_size: usize,
         pub(crate) read_chunk_size: usize,
@@ -309,6 +312,10 @@ impl Response {
 #[cfg(not(feature = "async"))]
 impl Read for Response {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.body_absent {
+            return Ok(0);
+        }
+
         if self.request_chunked {
             if self.consumed {
                 return Ok(0);
@@ -372,6 +379,10 @@ impl AsyncRead for Response {
         use tokio::io::AsyncBufRead;
 
         let mut this = self.project();
+
+        if *this.body_absent {
+            return Poll::Ready(Ok(()));
+        }
 
         if !*this.request_chunked {
             return this.stream.poll_read(cx, buf);

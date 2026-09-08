@@ -114,6 +114,10 @@ path = "examples/long_polling.rs"
 name = "multipart_form_data"
 path = "examples/multipart_form_data.rs"
 
+[[example]]
+name = "methods"
+path = "examples/methods.rs"
+
 [[bin]]
 name = "menemen"
 path = "src/bin/menemen.rs"

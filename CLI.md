@@ -39,7 +39,7 @@ menemen [OPTIONS] [URL] [COMMAND]
 
 | Flag | Argument | Purpose |
 |---|---|---|
-| `-X`, `--method` | `METHOD` | HTTP method: `GET`, `POST`, `PUT`, `DELETE` (default `GET`) |
+| `-X`, `--method` | `METHOD` | HTTP method: `GET`, `POST`, `PUT`, `DELETE`, `HEAD`, `PATCH`, `OPTIONS` (default `GET`) |
 | `-H`, `--header` | `HEADER` | Add a header as `Name: value`. Repeatable |
 | `--json` | `JSON` | Send a JSON body and set `Content-Type: application/json` |
 | `-d`, `--data` | `DATA` | Send a raw body |
